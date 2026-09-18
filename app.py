@@ -4,15 +4,15 @@ import plotly.graph_objects as go
 from mock_data import generate_telemetry, fetch_single_live_reading, simple_health_score, EQUIPMENT_LIST
 
 # Page configuration
-st.set_page_config(page_title="Mill 5 - Live PdM Dashboard", layout="wide")
+st.set_page_config(page_title="Mill 6 - Live PdM Dashboard", layout="wide")
 
 # Initialize global dataset in Session State
 if "df" not in st.session_state:
     st.session_state.df = generate_telemetry(50)
 
 # Sidebar
-st.sidebar.title("Mill 5 Monitoring")
-page = st.sidebar.radio("Navigate View Level", ["Overview (Mill 5)", "Equipment Drill-Down"])
+st.sidebar.title("Mill 6 Monitoring")
+page = st.sidebar.radio("Navigate View Level", ["Overview (Mill 6)", "Equipment Drill-Down"])
 
 # Live toggle switch
 st.sidebar.markdown("---")
@@ -36,8 +36,8 @@ def render_live_dashboard(selected_page):
     # ---------------------------------------------------------------
     # PAGE 1: OVERVIEW VIEW
     # ---------------------------------------------------------------
-    if selected_page == "Overview (Mill 5)":
-        st.title("Mill 5 - High Level Overview")
+    if selected_page == "Overview (Mill 6)":
+        st.title("Mill 6 - High Level Overview")
         st.caption("Live streaming updates active." if streaming_active else "Stream paused.")
         
         cols = st.columns(len(EQUIPMENT_LIST))
