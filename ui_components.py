@@ -1,0 +1,229 @@
+from datetime import datetime
+import streamlit as st
+import pandas as pd
+from ml_engine import retrain_specific_equipment_model
+
+# User Authentication Database
+USER_CREDENTIALS = {
+    "op_cotedivoire": {"password": "cement_operator", "role": "Operator", "name": "Control Room Operator"},
+    "admin_pdm": {"password": "lafarge_admin", "role": "Reliability Engineer", "name": "Lead Reliability Engineer"}
+}
+
+def render_sidebar_auth():
+    """Renders login controls and user role management in the sidebar."""
+    if "authenticated" not in st.session_state:
+        st.session_state.authenticated = False
+        st.session_state.user_role = None
+        st.session_state.user_name = ""
+
+    st.sidebar.markdown("### 🔐 User Authentication")
+    if not st.session_state.authenticated:
+        username = st.sidebar.text_input("Username", key="login_user")
+        password = st.sidebar.text_input("Password", type="password", key="login_pass")
+        if st.sidebar.button("Login"):
+            if username in USER_CREDENTIALS and USER_CREDENTIALS[username]["password"] == password:
+                st.session_state.authenticated = True
+                st.session_state.user_role = USER_CREDENTIALS[username]["role"]
+                st.session_state.user_name = USER_CREDENTIALS[username]["name"]
+                st.sidebar.success(f"Logged in as {st.session_state.user_name}")
+                st.rerun()
+            else:
+                st.sidebar.error("Invalid credentials")
+    else:
+        st.sidebar.info(f"👤 **User:** {st.session_state.user_name}\n\n🏅 **Role:** {st.session_state.user_role}")
+        if st.sidebar.button("Logout"):
+            st.session_state.authenticated = False
+            st.session_state.user_role = None
+            st.session_state.user_name = ""
+            st.rerun()
+
+    st.sidebar.markdown("---")
+
+def render_global_header():
+    """Renders the top corporate banner and search input."""
+    st.markdown(
+        """
+        <style>
+            .block-container {
+                padding-top: 1.0rem !important;
+                padding-bottom: 1.0rem !important;
+            }
+            div[data-testid="stHorizontalBlock"] {
+                align-items: center;
+            }
+            .brand-caption {
+                color: #333333;
+                font-size: 1.0rem;
+                font-weight: 700;
+                line-height: 1.2;
+            }
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
+
+    header_left, header_middle, header_right = st.columns([3.5, 0.5, 2.5])
+    
+    with header_left:
+        logo_col, text_col = st.columns([1, 2.5])
+        with logo_col:
+            try:
+                st.image("photo/lafargeholcim_cte_d_ivoire_logo.jfif", width=110)
+            except Exception:
+                st.image("https://upload.wikimedia.org/wikipedia/commons/thumb/8/87/Holcim_logo.svg/1200px-Holcim_logo.svg.png", width=110)
+            
+        with text_col:
+            st.markdown(
+                """
+                <div class="brand-caption">
+                    LafargeHolcim Côte d'Ivoire<br>
+                    <span style="font-weight: 500; color: #666666; font-size: 0.85rem;">Plant Operations — Engineering & Reliability Suite</span>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+        
+    with header_middle:
+        st.write("")
+
+    with header_right:
+        search_query = st.text_input(
+            label="Header Search",
+            placeholder="🔍 Search SCADA tag, equipment, or alert ID...",
+            label_visibility="collapsed",
+            key="global_header_search"
+        )
+        
+    st.markdown("<hr style='margin-top: 5px; margin-bottom: 15px; border: none; border-top: 1px solid #E0E0E0;'>", unsafe_allow_html=True)
+    return search_query
+
+def render_servicing_desk(selected_mill: str, alerts_to_display: list):
+    """Renders the RBAC-protected servicing desk form and export log."""
+    st.subheader(f"🛠️ {selected_mill} - Servicing Desk & Shift Handover")
+    
+    mill_alerts = [a for a in alerts_to_display if a["mill"] == selected_mill]
+    
+    if not mill_alerts:
+        st.info(f"No alerts recorded for {selected_mill}.")
+        return
+
+    m_df = pd.DataFrame(mill_alerts)
+    m_df["datetime_obj"] = pd.to_datetime(m_df["timestamp"])
+    now = datetime.now()
+    
+    st.markdown("##### ⏱️ Shift Log & Export Timeframe Filter")
+    f_col1, f_col2 = st.columns([2, 2])
+    
+    with f_col1:
+        time_frame = st.selectbox(
+            "Select Export Timeframe:",
+            ["All Recorded Alerts", "Today Only", "Last 24 Hours", "Last 7 Days", "Last 30 Days", "Custom Range"],
+            key=f"export_tf_{selected_mill}"
+        )
+    
+    filtered_export_df = m_df.copy()
+    if time_frame == "Today Only":
+        filtered_export_df = m_df[m_df["datetime_obj"].dt.date == now.date()]
+    elif time_frame == "Last 24 Hours":
+        cutoff = now - pd.Timedelta(hours=24)
+        filtered_export_df = m_df[m_df["datetime_obj"] >= cutoff]
+    elif time_frame == "Last 7 Days":
+        cutoff = now - pd.Timedelta(days=7)
+        filtered_export_df = m_df[m_df["datetime_obj"] >= cutoff]
+    elif time_frame == "Last 30 Days":
+        cutoff = now - pd.Timedelta(days=30)
+        filtered_export_df = m_df[m_df["datetime_obj"] >= cutoff]
+    elif time_frame == "Custom Range":
+        with f_col2:
+            date_range = st.date_input(
+                "Select Start & End Dates:",
+                value=(now.date() - pd.Timedelta(days=7), now.date()),
+                key=f"custom_dates_{selected_mill}"
+            )
+            if isinstance(date_range, tuple) and len(date_range) == 2:
+                start_date, end_date = date_range
+                filtered_export_df = m_df[
+                    (m_df["datetime_obj"].dt.date >= start_date) & 
+                    (m_df["datetime_obj"].dt.date <= end_date)
+                ]
+
+    export_ready_df = filtered_export_df.drop(columns=["datetime_obj"])
+
+    st.download_button(
+        label=f"📄 Export Shift Handover Log ({len(export_ready_df)} Records - CSV)",
+        data=export_ready_df.to_csv(index=False),
+        file_name=f"Shift_Handover_{selected_mill.replace(' ', '_')}_{time_frame.replace(' ', '_')}_{now.strftime('%Y%m%d')}.csv",
+        mime="text/csv",
+        key=f"download_btn_{selected_mill}"
+    )
+    
+    st.dataframe(
+        export_ready_df[["id", "timestamp", "equipment", "severity", "issue", "status", "operator_notes"]],
+        width="stretch",
+        hide_index=True
+    )
+    
+    st.markdown("---")
+    st.subheader(f"Service & Clear Alert ({selected_mill})")
+    
+    active_mill_alerts = [a for a in mill_alerts if "ACTIVE" in a["status"]]
+    
+    if active_mill_alerts:
+        alert_options = {f"Alert #{a['id']} - {a['equipment']} ({a['timestamp']})": a['id'] for a in active_mill_alerts}
+        selected_alert_str = st.selectbox("Select Alert to Resolve:", list(alert_options.keys()))
+        selected_id = alert_options[selected_alert_str]
+        selected_rec = next(a for a in mill_alerts if a["id"] == selected_id)
+        
+        st.markdown("##### 📋 Diagnostic Breakdown:")
+        if "individual_comments" in selected_rec:
+            for comment in selected_rec["individual_comments"]:
+                st.warning(f"• {comment}")
+
+        is_admin = (st.session_state.get("user_role") == "Reliability Engineer")
+
+        with st.form(key=f"service_form_{selected_mill}_{selected_id}"):
+            operator_name = st.text_input(
+                "Technician Name / Employee ID:", 
+                value=st.session_state.get("user_name", ""),
+                key=f"op_{selected_id}"
+            )
+            
+            alert_feedback_type = st.radio(
+                "Feedback for ML Model:",
+                ["Genuine Issue (Confirmed Failure/Wear)", "False Alarm (Operational Spike)"],
+                disabled=not is_admin,
+                help="Only Reliability Engineers can confirm or invalidate ML model baseline feedback.",
+                key=f"fb_{selected_id}"
+            )
+            
+            action_taken = st.text_area("Maintenance Action Taken:", key=f"act_{selected_id}")
+            button_label = "Submit & Retrain ML Model" if is_admin else "Submit Maintenance Note (Pending Engineer Review)"
+            
+            if st.form_submit_button(button_label):
+                if operator_name.strip() and action_taken.strip():
+                    for alert in st.session_state.alerts_log:
+                        if alert["id"] == selected_id:
+                            serviced_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                            
+                            if is_admin:
+                                was_true_failure = True if "Genuine Issue" in alert_feedback_type else False
+                                alert["status"] = "SERVICED / CLOSED"
+                                alert["operator_notes"] = f"Approved & Serviced by {operator_name} ({st.session_state.user_role}) at {serviced_time}. Action: {action_taken}"
+                                
+                                feedback_sample = [[alert["vibration_snapshot"], alert["temperature_snapshot"]]]
+                                retrain_specific_equipment_model(
+                                    mill=alert["mill"],
+                                    equipment=alert["equipment"],
+                                    feedback_samples=feedback_sample,
+                                    was_true_failure=was_true_failure
+                                )
+                                st.success(f"Alert #{selected_id} closed and ML model retrained for {selected_rec['mill']} - {selected_rec['equipment']}!")
+                            else:
+                                alert["operator_notes"] = f"Operator Note by {operator_name} at {serviced_time}: {action_taken} (Pending Engineer Sign-off)"
+                                st.info(f"Maintenance action logged for Alert #{selected_id}. Awaiting Reliability Engineer sign-off.")
+                                
+                    st.rerun()
+                else:
+                    st.error("Please enter technician name and action taken.")
+    else:
+        st.success(f"🎉 All alerts for {selected_mill} have been serviced.")
