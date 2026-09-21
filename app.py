@@ -11,7 +11,6 @@ from mock_data import (
     evaluate_and_log_alerts,
     EQUIPMENT_LIST
 )
-# Direct import from standalone ML module
 from ml_engine import retrain_with_operator_feedback
 
 # Page configuration
@@ -43,7 +42,7 @@ def render_live_dashboard(selected_page):
         st.session_state.df = pd.concat([st.session_state.df, new_packet], ignore_index=True)
         st.session_state.df = st.session_state.df.tail(1000)
         
-        # Check new packet for alerts
+        # Evaluate new packet for parameter alerts
         for _, row in new_packet.iterrows():
             st.session_state.alerts_log = evaluate_and_log_alerts(row, st.session_state.alerts_log)
 
@@ -136,7 +135,7 @@ def render_live_dashboard(selected_page):
         fig_vib.add_hline(y=VIB_WARN, line_dash="dash", line_color=COLOR_WARN, line_width=1.5, annotation_text="Warning (4.5 mm/s)", annotation_position="top right", annotation_font_color=COLOR_WARN)
         fig_vib.add_hline(y=VIB_CRIT, line_dash="dash", line_color=COLOR_CRIT, line_width=1.5, annotation_text="Critical (7.0 mm/s)", annotation_position="top right", annotation_font_color=COLOR_CRIT)
         fig_vib.update_layout(height=300, template="plotly_dark", xaxis=dict(title="Time", showgrid=True, gridcolor=GRID_COLOR), yaxis=dict(title=dict(text="Vibration (mm/s RMS)", font=dict(color=COLOR_VIB, size=13)), tickfont=dict(color=COLOR_VIB), showgrid=True, gridcolor=GRID_COLOR), margin=dict(l=20, r=20, t=30, b=20))
-        st.plotly_chart(fig_vib, use_container_width=True)
+        st.plotly_chart(fig_vib, width="stretch")
 
         # Temperature Graph
         fig_temp = go.Figure()
@@ -144,14 +143,14 @@ def render_live_dashboard(selected_page):
         fig_temp.add_hline(y=TEMP_WARN, line_dash="dash", line_color=COLOR_WARN, line_width=1.5, annotation_text="Warning (75.0 °C)", annotation_position="top right", annotation_font_color=COLOR_WARN)
         fig_temp.add_hline(y=TEMP_CRIT, line_dash="dash", line_color=COLOR_CRIT, line_width=1.5, annotation_text="Critical (90.0 °C)", annotation_position="top right", annotation_font_color=COLOR_CRIT)
         fig_temp.update_layout(height=300, template="plotly_dark", xaxis=dict(title="Time", showgrid=True, gridcolor=GRID_COLOR), yaxis=dict(title=dict(text="Temperature (°C)", font=dict(color=COLOR_TEMP, size=13)), tickfont=dict(color=COLOR_TEMP), showgrid=True, gridcolor=GRID_COLOR), margin=dict(l=20, r=20, t=30, b=20))
-        st.plotly_chart(fig_temp, use_container_width=True)
+        st.plotly_chart(fig_temp, width="stretch")
 
     # ---------------------------------------------------------------
-    # PAGE 3: OPERATOR MAINTENANCE ALERT LOG
+    # PAGE 3: OPERATOR MAINTENANCE ALERT LOG (With Granular Comments)
     # ---------------------------------------------------------------
     elif selected_page == "Maintenance Alert Log":
-        st.title("🛠️ Maintenance Alert Log & Active Model Learning")
-        st.write("Review active machinery alerts. Servicing an alert automatically feeds diagnostic ground-truth back into the ML model.")
+        st.title("🛠️ Maintenance Alert Log & Diagnostic Servicing")
+        st.write("Review active machinery alerts with specific root-cause comments.")
         
         if not st.session_state.alerts_log:
             st.info("No system alerts recorded yet.")
@@ -159,7 +158,7 @@ def render_live_dashboard(selected_page):
             alerts_df = pd.DataFrame(st.session_state.alerts_log)
             st.dataframe(
                 alerts_df[["id", "timestamp", "equipment", "severity", "issue", "status", "operator_notes"]],
-                use_container_width=True,
+               width="stretch",
                 hide_index=True
             )
             
@@ -170,16 +169,30 @@ def render_live_dashboard(selected_page):
             
             if active_alerts:
                 alert_options = {f"Alert #{a['id']} - {a['equipment']} ({a['timestamp']})": a['id'] for a in active_alerts}
-                selected_alert_str = st.selectbox("Select Alert to Clear:", list(alert_options.keys()))
+                selected_alert_str = st.selectbox("Select Alert to Resolve:", list(alert_options.keys()))
                 selected_id = alert_options[selected_alert_str]
                 
+                # Fetch selected alert record details
+                selected_alert_rec = next(a for a in st.session_state.alerts_log if a["id"] == selected_id)
+                
+                # Render detailed comments breakdown for operator
+                st.markdown("##### 📋 Diagnostic Breakdown for Selected Alert:")
+                if "individual_comments" in selected_alert_rec:
+                    for comment in selected_alert_rec["individual_comments"]:
+                        if "CRITICAL" in comment:
+                            st.error(f"• {comment}")
+                        elif "ELEVATED" in comment or "LOW" in comment or "ANOMALY" in comment:
+                            st.warning(f"• {comment}")
+                        else:
+                            st.info(f"• {comment}")
+
                 with st.form("service_form"):
                     operator_name = st.text_input("Operator / Maintenance Technician Name:")
                     alert_feedback_type = st.radio(
                         "Diagnostic Feedback for Model Retraining:",
                         ["Genuine Issue (Confirmed Equipment Failure / Wear)", "False Alarm (Normal Operational Spike)"]
                     )
-                    action_taken = st.text_area("Maintenance Action Taken (e.g., Replaced bearing, adjusted alignment):")
+                    action_taken = st.text_area("Maintenance Action Taken (e.g., Replaced drive bearing, balanced impeller):")
                     
                     submit = st.form_submit_button("Submit & Retrain Predictive Model")
                     
@@ -193,7 +206,6 @@ def render_live_dashboard(selected_page):
                                     alert["status"] = "SERVICED / CLOSED"
                                     alert["operator_notes"] = f"Serviced by {operator_name} at {serviced_time}. Action: {action_taken} | Verified: {alert_feedback_type}"
                                     
-                                    # Call standalone ML engine for dynamic retraining
                                     feedback_sample = [[alert["vibration_snapshot"], alert["temperature_snapshot"]]]
                                     retrain_with_operator_feedback(feedback_sample, was_true_failure=was_true_failure)
                                     

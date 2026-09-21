@@ -1,8 +1,7 @@
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
-# Import directly from the standalone ML module
-from ml_engine import predict_anomaly
+from ml_engine import analyze_telemetry_diagnostics
 
 EQUIPMENT_LIST = [
     "Dynamic Separator",
@@ -24,7 +23,7 @@ def generate_telemetry(num_records=50):
             vib = np.random.normal(vib_base, 0.3)
             temp = np.random.normal(temp_base, 1.0)
             
-            # Simulate anomaly on E5 & E8 Pumps to trigger demo alerts
+            # Simulate anomalies for testing alerts
             if eq == "E5 & E8 Cement Pumps" and i > 40:
                 vib += (i - 40) * 0.4
                 temp += (i - 40) * 1.5
@@ -73,32 +72,32 @@ def simple_health_score(vib, temp):
     return max(0, score)
 
 def evaluate_and_log_alerts(latest_reading, alerts_list):
-    """Evaluates telemetry using the isolated ML engine and threshold bounds."""
+    """Evaluates telemetry using ml_engine diagnostics and logs descriptive alerts."""
     eq = latest_reading["equipment"]
     timestamp = latest_reading["timestamp"]
     vib = latest_reading["vibration_mm_s"]
     temp = latest_reading["temperature_c"]
     
-    # Predict directly via ml_engine
-    is_ml_anomaly, anomaly_prob = predict_anomaly(vib, temp)
+    # Perform full diagnostic analysis
+    diag = analyze_telemetry_diagnostics(vib, temp)
     
     active_alerts_for_eq = [
         a for a in alerts_list 
         if a["equipment"] == eq and "ACTIVE" in a["status"]
     ]
     
-    if not active_alerts_for_eq:
-        if is_ml_anomaly or vib > 4.5 or temp > 75.0:
-            severity = "CRITICAL" if (vib > 7.0 or temp > 90.0) else "WARNING"
-            alerts_list.insert(0, {
-                "id": len(alerts_list) + 1,
-                "timestamp": timestamp.strftime("%Y-%m-%d %H:%M:%S"),
-                "equipment": eq,
-                "severity": severity,
-                "issue": f"ML Anomaly ({anomaly_prob}% Risk) | Vib: {vib} mm/s, Temp: {temp} °C",
-                "status": f"ACTIVE - {severity}",
-                "vibration_snapshot": vib,
-                "temperature_snapshot": temp,
-                "operator_notes": "Pending Maintenance"
-            })
+    # Log alert if severity is WARNING/CRITICAL and no unserviced alert exists for this equipment
+    if not active_alerts_for_eq and diag["severity"] != "NORMAL":
+        alerts_list.insert(0, {
+            "id": len(alerts_list) + 1,
+            "timestamp": timestamp.strftime("%Y-%m-%d %H:%M:%S"),
+            "equipment": eq,
+            "severity": diag["severity"],
+            "issue": diag["diagnostic_comments"],
+            "individual_comments": diag["individual_comments"],
+            "status": f"ACTIVE - {diag['severity']}",
+            "vibration_snapshot": vib,
+            "temperature_snapshot": temp,
+            "operator_notes": "Pending Maintenance"
+        })
     return alerts_list
