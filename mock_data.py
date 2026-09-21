@@ -22,13 +22,13 @@ def generate_multi_mill_telemetry(num_records=30):
         for eq in EQUIPMENT_LIST:
             for i in range(num_records):
                 timestamp = now - timedelta(minutes=(num_records - i))
-                vib_base = 2.5 if eq != "Mill Main Control" else 4.0
-                temp_base = 55.0 if eq != "E5 & E8 Cement Pumps" else 62.0
+                vib_base = 4.0 if eq == "Mill Main Control" else 2.5
+                temp_base = 62.0 if eq == "E5 & E8 Cement Pumps" else 55.0
                 
                 vib = np.random.normal(vib_base, 0.3)
                 temp = np.random.normal(temp_base, 1.0)
                 
-                # Simulate an anomaly on Mill 6 (E5 & E8 Pumps) for demonstration
+                # Simulate an anomaly on Mill 6 (E5 & E8 Pumps) for testing
                 if mill == "Mill 6" and eq == "E5 & E8 Cement Pumps" and i > 20:
                     vib += (i - 20) * 0.3
                     temp += (i - 20) * 1.2
@@ -48,8 +48,8 @@ def fetch_multi_mill_live_reading():
     new_rows = []
     for mill in PLANT_MILLS:
         for eq in EQUIPMENT_LIST:
-            vib_base = 2.5 if eq != "Mill Main Control" else 4.0
-            temp_base = 55.0 if eq != "E5 & E8 Cement Pumps" else 62.0
+            vib_base = 4.0 if eq == "Mill Main Control" else 2.5
+            temp_base = 62.0 if eq == "E5 & E8 Cement Pumps" else 55.0
             
             vib = np.random.normal(vib_base, 0.4)
             temp = np.random.normal(temp_base, 1.2)
@@ -81,13 +81,14 @@ def simple_health_score(vib, temp):
     return max(0, score)
 
 def evaluate_and_log_alerts(latest_reading, alerts_list):
-    """Evaluates telemetry and tags alerts with the specific Mill name."""
+    """Evaluates telemetry using the isolated ML model for the specific Mill and Equipment."""
     mill = latest_reading["mill"]
     eq = latest_reading["equipment"]
     timestamp = latest_reading["timestamp"]
     vib = latest_reading["vibration_mm_s"]
     temp = latest_reading["temperature_c"]
     
+    # Analyze using the isolated machine model
     diag = analyze_telemetry_diagnostics(mill, eq, vib, temp)
     
     active_alerts_for_eq = [

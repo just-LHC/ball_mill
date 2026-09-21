@@ -104,10 +104,6 @@ def analyze_telemetry_diagnostics(mill: str, equipment: str, vib: float, temp: f
     }
 
 def retrain_specific_equipment_model(mill: str, equipment: str, feedback_samples: list, was_true_failure: bool = True):
-    """
-    Retrains ONLY the model assigned to the specified (mill, equipment) unit,
-    preventing cross-contamination with other machines.
-    """
     key = _get_model_key(mill, equipment)
     if key not in _MODEL_REGISTRY:
         init_equipment_model(mill, equipment)
@@ -115,16 +111,14 @@ def retrain_specific_equipment_model(mill: str, equipment: str, feedback_samples
     model = _MODEL_REGISTRY[key]
     buffer_df = _BUFFER_REGISTRY[key]
     
+    # ALWAYS ensure feature names match training DataFrame
     new_rows = pd.DataFrame(feedback_samples, columns=["vibration_mm_s", "temperature_c"])
     
     if was_true_failure:
-        # Heavily weight confirmed failures for this machine
         updated_buffer = pd.concat([buffer_df, new_rows, new_rows], ignore_index=True)
     else:
-        # Add as acceptable baseline variation for this machine
         updated_buffer = pd.concat([buffer_df, new_rows], ignore_index=True)
         
-    # Re-fit ONLY this specific model
     model.fit(updated_buffer)
     _MODEL_REGISTRY[key] = model
     _BUFFER_REGISTRY[key] = updated_buffer
