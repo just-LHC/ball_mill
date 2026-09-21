@@ -1,6 +1,8 @@
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
+# Import directly from the standalone ML module
+from ml_engine import predict_anomaly
 
 EQUIPMENT_LIST = [
     "Dynamic Separator",
@@ -71,38 +73,32 @@ def simple_health_score(vib, temp):
     return max(0, score)
 
 def evaluate_and_log_alerts(latest_reading, alerts_list):
-    """Monitors live data for threshold breaches and logs new alerts automatically."""
+    """Evaluates telemetry using the isolated ML engine and threshold bounds."""
     eq = latest_reading["equipment"]
     timestamp = latest_reading["timestamp"]
     vib = latest_reading["vibration_mm_s"]
     temp = latest_reading["temperature_c"]
     
-    # Check if there is already an active unserviced alert for this equipment
+    # Predict directly via ml_engine
+    is_ml_anomaly, anomaly_prob = predict_anomaly(vib, temp)
+    
     active_alerts_for_eq = [
         a for a in alerts_list 
-        if a["equipment"] == eq and a["status"] in ["ACTIVE - CRITICAL", "ACTIVE - WARNING"]
+        if a["equipment"] == eq and "ACTIVE" in a["status"]
     ]
     
-    # Prevent duplicate alert creation if an unserviced alert already exists
     if not active_alerts_for_eq:
-        if vib > 7.0 or temp > 90.0:
+        if is_ml_anomaly or vib > 4.5 or temp > 75.0:
+            severity = "CRITICAL" if (vib > 7.0 or temp > 90.0) else "WARNING"
             alerts_list.insert(0, {
                 "id": len(alerts_list) + 1,
                 "timestamp": timestamp.strftime("%Y-%m-%d %H:%M:%S"),
                 "equipment": eq,
-                "severity": "CRITICAL",
-                "issue": f"High Vibration ({vib} mm/s) or Temp ({temp} °C)",
-                "status": "ACTIVE - CRITICAL",
-                "operator_notes": "Pending Maintenance"
-            })
-        elif vib > 4.5 or temp > 75.0:
-            alerts_list.insert(0, {
-                "id": len(alerts_list) + 1,
-                "timestamp": timestamp.strftime("%Y-%m-%d %H:%M:%S"),
-                "equipment": eq,
-                "severity": "WARNING",
-                "issue": f"Elevated Vibration ({vib} mm/s) or Temp ({temp} °C)",
-                "status": "ACTIVE - WARNING",
+                "severity": severity,
+                "issue": f"ML Anomaly ({anomaly_prob}% Risk) | Vib: {vib} mm/s, Temp: {temp} °C",
+                "status": f"ACTIVE - {severity}",
+                "vibration_snapshot": vib,
+                "temperature_snapshot": temp,
                 "operator_notes": "Pending Maintenance"
             })
     return alerts_list

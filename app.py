@@ -2,6 +2,7 @@ from datetime import datetime
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
+
 from mock_data import (
     generate_telemetry, 
     fetch_single_live_reading, 
@@ -10,6 +11,8 @@ from mock_data import (
     evaluate_and_log_alerts,
     EQUIPMENT_LIST
 )
+# Direct import from standalone ML module
+from ml_engine import retrain_with_operator_feedback
 
 # Page configuration
 st.set_page_config(page_title="Mill 6 - Live PdM Dashboard", layout="wide")
@@ -52,7 +55,6 @@ def render_live_dashboard(selected_page):
     if selected_page == "Overview (Mill 6)":
         st.title("Mill 6 - High Level Overview")
         
-        # Active Alerts Summary Ribbon
         active_count = len([a for a in st.session_state.alerts_log if "ACTIVE" in a["status"]])
         if active_count > 0:
             st.error(f"⚠️ **Attention Required:** There are {active_count} active unserviced equipment alerts.")
@@ -88,7 +90,6 @@ def render_live_dashboard(selected_page):
         eq_data = current_df[current_df["equipment"] == selected_eq]
         latest = eq_data.iloc[-1]
         
-        # Diagnostics
         sensor_diagnostic = check_sensor_health(latest["timestamp"], latest["vibration_mm_s"], latest["temperature_c"])
         
         st.markdown("##### 🔌 Field Instrumentation Diagnostics")
@@ -124,7 +125,6 @@ def render_live_dashboard(selected_page):
         st.markdown("---")
         st.subheader(f"Real-Time Telemetry Trends: {selected_eq}")
 
-        # Industrial Palette
         VIB_WARN, VIB_CRIT = 4.5, 7.0
         TEMP_WARN, TEMP_CRIT = 75.0, 90.0
         COLOR_VIB, COLOR_TEMP = "#00D2FF", "#FF8C00"
@@ -150,8 +150,8 @@ def render_live_dashboard(selected_page):
     # PAGE 3: OPERATOR MAINTENANCE ALERT LOG
     # ---------------------------------------------------------------
     elif selected_page == "Maintenance Alert Log":
-        st.title("🛠️ Maintenance Alert Log & Servicing Desk")
-        st.write("Review active machinery alerts. Enter maintenance notes and mark as **SERVICED** to clear an issue.")
+        st.title("🛠️ Maintenance Alert Log & Active Model Learning")
+        st.write("Review active machinery alerts. Servicing an alert automatically feeds diagnostic ground-truth back into the ML model.")
         
         if not st.session_state.alerts_log:
             st.info("No system alerts recorded yet.")
@@ -164,9 +164,8 @@ def render_live_dashboard(selected_page):
             )
             
             st.markdown("---")
-            st.subheader("Update Alert Status (Operator Servicing)")
+            st.subheader("Update Alert Status & Retrain Model")
             
-            # Select an unserviced alert to manage
             active_alerts = [a for a in st.session_state.alerts_log if "ACTIVE" in a["status"]]
             
             if active_alerts:
@@ -176,21 +175,32 @@ def render_live_dashboard(selected_page):
                 
                 with st.form("service_form"):
                     operator_name = st.text_input("Operator / Maintenance Technician Name:")
-                    action_taken = st.text_area("Maintenance Action Taken (e.g., Replaced bearing, re-lubricated drive):")
+                    alert_feedback_type = st.radio(
+                        "Diagnostic Feedback for Model Retraining:",
+                        ["Genuine Issue (Confirmed Equipment Failure / Wear)", "False Alarm (Normal Operational Spike)"]
+                    )
+                    action_taken = st.text_area("Maintenance Action Taken (e.g., Replaced bearing, adjusted alignment):")
                     
-                    submit = st.form_submit_button("Mark as SERVICED & Clear Alert")
+                    submit = st.form_submit_button("Submit & Retrain Predictive Model")
                     
                     if submit:
                         if operator_name and action_taken:
                             for alert in st.session_state.alerts_log:
                                 if alert["id"] == selected_id:
                                     serviced_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                                    was_true_failure = True if "Genuine Issue" in alert_feedback_type else False
+                                    
                                     alert["status"] = "SERVICED / CLOSED"
-                                    alert["operator_notes"] = f"Serviced by {operator_name} at {serviced_time}. Action: {action_taken}"
-                            st.success(f"Alert #{selected_id} updated to SERVICED!")
+                                    alert["operator_notes"] = f"Serviced by {operator_name} at {serviced_time}. Action: {action_taken} | Verified: {alert_feedback_type}"
+                                    
+                                    # Call standalone ML engine for dynamic retraining
+                                    feedback_sample = [[alert["vibration_snapshot"], alert["temperature_snapshot"]]]
+                                    retrain_with_operator_feedback(feedback_sample, was_true_failure=was_true_failure)
+                                    
+                            st.success(f"Alert #{selected_id} updated and ML model retrained!")
                             st.rerun()
                         else:
-                            st.error("Please provide both your name and the maintenance action taken before clearing.")
+                            st.error("Please provide your name and maintenance action taken.")
             else:
                 st.success("🎉 All logged alerts have been serviced and closed.")
 
