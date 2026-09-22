@@ -41,7 +41,7 @@ def render_sidebar_auth():
     st.sidebar.markdown("---")
 
 def render_global_header():
-    """Renders the top corporate banner and search input."""
+    """Renders top corporate banner and active search jump-routing bar."""
     st.markdown(
         """
         <style>
@@ -90,12 +90,71 @@ def render_global_header():
     with header_right:
         search_query = st.text_input(
             label="Header Search",
-            placeholder="🔍 Search SCADA tag, equipment, or alert ID...",
+            placeholder="🔍 Search tag (e.g. 611-SEP-01) or mill (e.g. Mill 6)...",
             label_visibility="collapsed",
             key="global_header_search"
         )
-        
+
     st.markdown("<hr style='margin-top: 5px; margin-bottom: 15px; border: none; border-top: 1px solid #E0E0E0;'>", unsafe_allow_html=True)
+
+    # Tracking state to ensure search jumps trigger ONLY when new text is typed
+    if "last_processed_search" not in st.session_state:
+        st.session_state["last_processed_search"] = ""
+
+    current_search = search_query.strip().lower()
+
+    # -------------------------------------------------------------------
+    # SCADA NAVIGATION SEARCH ROUTING (Only triggers on NEW query entry)
+    # -------------------------------------------------------------------
+    if current_search and current_search != st.session_state["last_processed_search"]:
+        st.session_state["last_processed_search"] = current_search
+        
+        tag_map = {
+            "611-sep-01": "Dynamic Separator",
+            "vib-611-sep01-r": "Dynamic Separator",
+            "tit-611-sep01-b1": "Dynamic Separator",
+            "separator": "Dynamic Separator",
+            
+            "611-pmp-e5e8": "E5 & E8 Cement Pumps",
+            "vib-611-pmp05-a": "E5 & E8 Cement Pumps",
+            "pump": "E5 & E8 Cement Pumps",
+            
+            "611-fn-sep": "Separator Filter Fan",
+            "vib-611-fns-r": "Separator Filter Fan",
+            
+            "611-ml-drv": "Mill Main Control",
+            "vib-611-mld-gb": "Mill Main Control",
+            "drive": "Mill Main Control",
+            
+            "611-fn-main": "Main Filter Fan",
+            "vib-611-fnm-de": "Main Filter Fan"
+        }
+
+        should_rerun = False
+
+        # Check for Mill Routing (e.g., 'mill 1', 'mill 6')
+        for mill in ["Mill 1", "Mill 2", "Mill 4", "Mill 5", "Mill 6"]:
+            if mill.lower() in current_search:
+                st.session_state["nav_main_view"] = "Individual Mill Monitor"
+                st.session_state["nav_selected_mill"] = mill
+                should_rerun = True
+                break
+
+        # Check for SCADA Tag/Equipment Routing
+        for tag, eq_name in tag_map.items():
+            if tag in current_search:
+                st.session_state["nav_main_view"] = "Individual Mill Monitor"
+                st.session_state["nav_mill_page"] = "Equipment Drill-Down"
+                st.session_state["nav_selected_eq"] = eq_name
+                should_rerun = True
+                break
+
+        if should_rerun:
+            st.rerun()
+
+    elif not current_search:
+        st.session_state["last_processed_search"] = ""
+
     return search_query
 
 def render_servicing_desk(selected_mill: str, alerts_to_display: list):
@@ -183,53 +242,50 @@ def render_servicing_desk(selected_mill: str, alerts_to_display: list):
 
         is_admin = (st.session_state.get("user_role") == "Reliability Engineer")
 
-        # Session State Form Storage to survive live fragment polling ticks
-        op_key = f"input_op_{selected_mill}_{selected_id}"
-        fb_key = f"input_fb_{selected_mill}_{selected_id}"
-        act_key = f"input_act_{selected_mill}_{selected_id}"
-
-        operator_name = st.text_input(
-            "Technician Name / Employee ID:", 
-            value=st.session_state.get("user_name", ""),
-            key=op_key
-        )
-        
-        alert_feedback_type = st.radio(
-            "Feedback for ML Model:",
-            ["Genuine Issue (Confirmed Failure/Wear)", "False Alarm (Operational Spike)"],
-            disabled=not is_admin,
-            help="Only Reliability Engineers can confirm or invalidate ML model baseline feedback.",
-            key=fb_key
-        )
-        
-        action_taken = st.text_area("Maintenance Action Taken:", key=act_key)
-        button_label = "Submit & Retrain ML Model" if is_admin else "Submit Maintenance Note (Pending Engineer Review)"
-        
-        # Explicit Submit Button handling with direct state mutations
-        if st.button(button_label, key=f"btn_action_{selected_mill}_{selected_id}"):
-            if operator_name.strip() and action_taken.strip():
-                serviced_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                
-                for alert in shared_engine.alerts_log:
-                    if alert["id"] == selected_id:
-                        if is_admin:
-                            was_true_failure = True if "Genuine Issue" in alert_feedback_type else False
-                            alert["status"] = "SERVICED / CLOSED"
-                            alert["operator_notes"] = f"Approved & Serviced by {operator_name} ({st.session_state.user_role}) at {serviced_time}. Action: {action_taken}"
-                            
-                            # Retrain machine isolated model in shared memory
-                            feedback_sample = [[alert["vibration_snapshot"], alert["temperature_snapshot"]]]
-                            retrain_specific_equipment_model(
-                                mill=alert["mill"],
-                                equipment=alert["equipment"],
-                                feedback_samples=feedback_sample,
-                                was_true_failure=was_true_failure
-                            )
-                            st.success(f"✅ Alert #{selected_id} closed and ML model retrained for {selected_rec['mill']} - {selected_rec['equipment']}!")
-                        else:
-                            alert["operator_notes"] = f"Operator Note by {operator_name} at {serviced_time}: {action_taken} (Pending Engineer Sign-off)"
-                            st.info(f"ℹ️ Maintenance action logged for Alert #{selected_id}. Awaiting Reliability Engineer sign-off.")
-            else:
-                st.error("⚠️ Please enter technician name and action taken before submitting.")
+        with st.form(key=f"form_service_{selected_mill}_{selected_id}"):
+            operator_name = st.text_input(
+                "Technician Name / Employee ID:", 
+                value=st.session_state.get("user_name", ""),
+                key=f"input_op_{selected_mill}_{selected_id}"
+            )
+            
+            alert_feedback_type = st.radio(
+                "Feedback for ML Model:",
+                ["Genuine Issue (Confirmed Failure/Wear)", "False Alarm (Operational Spike)"],
+                disabled=not is_admin,
+                help="Only Reliability Engineers can confirm or invalidate ML model baseline feedback.",
+                key=f"input_fb_{selected_mill}_{selected_id}"
+            )
+            
+            action_taken = st.text_area("Maintenance Action Taken:", key=f"input_act_{selected_mill}_{selected_id}")
+            button_label = "Submit & Retrain ML Model" if is_admin else "Submit Maintenance Note (Pending Engineer Review)"
+            
+            submitted = st.form_submit_button(button_label)
+            
+            if submitted:
+                if operator_name.strip() and action_taken.strip():
+                    serviced_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    
+                    for alert in shared_engine.alerts_log:
+                        if alert["id"] == selected_id:
+                            if is_admin:
+                                was_true_failure = True if "Genuine Issue" in alert_feedback_type else False
+                                alert["status"] = "SERVICED / CLOSED"
+                                alert["operator_notes"] = f"Approved & Serviced by {operator_name} ({st.session_state.user_role}) at {serviced_time}. Action: {action_taken}"
+                                
+                                feedback_sample = [[alert["vibration_snapshot"], alert["temperature_snapshot"]]]
+                                retrain_specific_equipment_model(
+                                    mill=alert["mill"],
+                                    equipment=alert["equipment"],
+                                    feedback_samples=feedback_sample,
+                                    was_true_failure=was_true_failure
+                                )
+                                st.success(f"✅ Alert #{selected_id} closed and ML model retrained for {selected_rec['mill']} - {selected_rec['equipment']}!")
+                            else:
+                                alert["operator_notes"] = f"Operator Note by {operator_name} at {serviced_time}: {action_taken} (Pending Engineer Sign-off)"
+                                st.info(f"ℹ️ Maintenance action logged for Alert #{selected_id}. Awaiting Reliability Engineer sign-off.")
+                    st.rerun()
+                else:
+                    st.error("⚠️ Please enter technician name and action taken before submitting.")
     else:
         st.success(f"🎉 All alerts for {selected_mill} have been serviced.")
