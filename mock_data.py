@@ -110,3 +110,5 @@ def simple_health_score(vib, temp):
     if temp > 75.0: score -= 20
     if temp > 90.0: score -= 100
     return max(0, score)
+
+
