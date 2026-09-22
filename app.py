@@ -68,13 +68,10 @@ if main_view == "Individual Mill Monitor":
 streaming_active = st.sidebar.toggle("Live Telemetry Stream", value=True)
 
 # -------------------------------------------------------------------
-# ISOLATED FRAGMENT: GENERAL PLANT OVERVIEW
+# ISOLATED FRAGMENT: GENERAL PLANT OVERVIEW (READ ONLY)
 # -------------------------------------------------------------------
 @st.fragment(run_every="3s" if streaming_active else None)
 def render_live_overview_matrix(search_query):
-    if streaming_active:
-        shared_engine.tick_live_telemetry()
-
     alerts_to_display = shared_engine.alerts_log
     if search_query.strip():
         q = search_query.lower()
@@ -124,13 +121,10 @@ def render_live_overview_matrix(search_query):
         st.dataframe(alerts_df, width="stretch", hide_index=True)
 
 # -------------------------------------------------------------------
-# ISOLATED FRAGMENT: SUBSYSTEM OVERVIEW
+# ISOLATED FRAGMENT: SUBSYSTEM OVERVIEW (READ ONLY)
 # -------------------------------------------------------------------
 @st.fragment(run_every="3s" if streaming_active else None)
 def render_live_subsystem_cards(selected_mill):
-    if streaming_active:
-        shared_engine.tick_live_telemetry()
-
     mill_df = shared_engine.df[shared_engine.df["mill"] == selected_mill]
     st.subheader(f"⚙️ {selected_mill} - Subsystem Overview")
     cols = st.columns(len(EQUIPMENT_LIST))
@@ -149,13 +143,10 @@ def render_live_subsystem_cards(selected_mill):
                 st.metric("Temperature", f"{latest['temperature_c']} °C")
 
 # -------------------------------------------------------------------
-# ISOLATED FRAGMENT: DRILL-DOWN CHARTS & METRICS
+# ISOLATED FRAGMENT: DRILL-DOWN CHARTS & METRICS (READ ONLY)
 # -------------------------------------------------------------------
 @st.fragment(run_every="3s" if streaming_active else None)
 def render_live_drilldown_charts(selected_mill, selected_eq):
-    if streaming_active:
-        shared_engine.tick_live_telemetry()
-
     mill_df = shared_engine.df[shared_engine.df["mill"] == selected_mill]
     eq_data = mill_df[mill_df["equipment"] == selected_eq]
     
