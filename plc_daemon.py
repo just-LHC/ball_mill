@@ -5,10 +5,10 @@ from datetime import datetime
 import pandas as pd
 from sqlalchemy import create_engine, text
 
-# Get database connection URL
+# Exact Supabase Pooler URI (IPv4 Port 6543)
 DATABASE_URL = os.getenv(
     "DATABASE_URL", 
-    "postgresql://postgres:[YOUR-PASSWORD]@db.xxxx.supabase.co:5432/postgres"
+    "postgresql://postgres.avzcqgwerokdyzdpflnz:Just72506537%40@aws-1-eu-west-1.pooler.supabase.com:6543/postgres"
 )
 
 engine = create_engine(DATABASE_URL, pool_pre_ping=True)
