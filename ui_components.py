@@ -183,11 +183,15 @@ def render_servicing_desk(selected_mill: str, alerts_to_display: list):
 
         is_admin = (st.session_state.get("user_role") == "Reliability Engineer")
 
-        # Isolated inputs outside the form for reliable execution
+        # Session State Form Storage to survive live fragment polling ticks
+        op_key = f"input_op_{selected_mill}_{selected_id}"
+        fb_key = f"input_fb_{selected_mill}_{selected_id}"
+        act_key = f"input_act_{selected_mill}_{selected_id}"
+
         operator_name = st.text_input(
             "Technician Name / Employee ID:", 
             value=st.session_state.get("user_name", ""),
-            key=f"op_{selected_mill}_{selected_id}"
+            key=op_key
         )
         
         alert_feedback_type = st.radio(
@@ -195,15 +199,17 @@ def render_servicing_desk(selected_mill: str, alerts_to_display: list):
             ["Genuine Issue (Confirmed Failure/Wear)", "False Alarm (Operational Spike)"],
             disabled=not is_admin,
             help="Only Reliability Engineers can confirm or invalidate ML model baseline feedback.",
-            key=f"fb_{selected_mill}_{selected_id}"
+            key=fb_key
         )
         
-        action_taken = st.text_area("Maintenance Action Taken:", key=f"act_{selected_mill}_{selected_id}")
+        action_taken = st.text_area("Maintenance Action Taken:", key=act_key)
         button_label = "Submit & Retrain ML Model" if is_admin else "Submit Maintenance Note (Pending Engineer Review)"
         
-        if st.button(button_label, key=f"btn_submit_{selected_mill}_{selected_id}"):
+        # Explicit Submit Button handling with direct state mutations
+        if st.button(button_label, key=f"btn_action_{selected_mill}_{selected_id}"):
             if operator_name.strip() and action_taken.strip():
                 serviced_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                
                 for alert in shared_engine.alerts_log:
                     if alert["id"] == selected_id:
                         if is_admin:
@@ -211,6 +217,7 @@ def render_servicing_desk(selected_mill: str, alerts_to_display: list):
                             alert["status"] = "SERVICED / CLOSED"
                             alert["operator_notes"] = f"Approved & Serviced by {operator_name} ({st.session_state.user_role}) at {serviced_time}. Action: {action_taken}"
                             
+                            # Retrain machine isolated model in shared memory
                             feedback_sample = [[alert["vibration_snapshot"], alert["temperature_snapshot"]]]
                             retrain_specific_equipment_model(
                                 mill=alert["mill"],
@@ -223,6 +230,6 @@ def render_servicing_desk(selected_mill: str, alerts_to_display: list):
                             alert["operator_notes"] = f"Operator Note by {operator_name} at {serviced_time}: {action_taken} (Pending Engineer Sign-off)"
                             st.info(f"ℹ️ Maintenance action logged for Alert #{selected_id}. Awaiting Reliability Engineer sign-off.")
             else:
-                st.error("Please enter technician name and action taken.")
+                st.error("⚠️ Please enter technician name and action taken before submitting.")
     else:
         st.success(f"🎉 All alerts for {selected_mill} have been serviced.")
