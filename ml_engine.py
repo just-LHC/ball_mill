@@ -10,7 +10,7 @@ from sklearn.ensemble import IsolationForest
 
 # Retrieve Email Secrets safely
 SMTP_SERVER = st.secrets.get("SMTP_SERVER", os.getenv("SMTP_SERVER", "smtp.gmail.com"))
-SMTP_PORT = int(st.secrets.get("SMTP_PORT", os.getenv("SMTP_PORT", 587)))
+SMTP_PORT = int(st.secrets.get("SMTP_PORT", os.getenv("SMTP_PORT", 465)))
 SENDER_EMAIL = st.secrets.get("SENDER_EMAIL", os.getenv("SENDER_EMAIL", ""))
 SENDER_PASSWORD = st.secrets.get("SENDER_PASSWORD", os.getenv("SENDER_PASSWORD", ""))
 MAINTENANCE_LEADS = st.secrets.get("MAINTENANCE_LEADS", os.getenv("MAINTENANCE_LEADS", ""))
@@ -19,32 +19,22 @@ MAINTENANCE_LEADS = st.secrets.get("MAINTENANCE_LEADS", os.getenv("MAINTENANCE_L
 _MODEL_REGISTRY = {}
 _BUFFER_REGISTRY = {}
 
-import sys
-
 def send_critical_alert_email(mill: str, equipment: str, vibration: float, temperature: float, individual_comments: list):
     """Sends an automated HTML alert report to Maintenance Leads for CRITICAL ML predictions."""
-    
-    # Reload secrets directly inside the function call
-    sender_email = st.secrets.get("SENDER_EMAIL", os.getenv("SENDER_EMAIL", ""))
-    sender_password = st.secrets.get("SENDER_PASSWORD", os.getenv("SENDER_PASSWORD", ""))
-    maintenance_leads = st.secrets.get("MAINTENANCE_LEADS", os.getenv("MAINTENANCE_LEADS", ""))
-    smtp_server = st.secrets.get("SMTP_SERVER", os.getenv("SMTP_SERVER", "smtp.gmail.com"))
-    smtp_port = int(st.secrets.get("SMTP_PORT", os.getenv("SMTP_PORT", 465)))
+    sender_email = st.secrets.get("SENDER_EMAIL", os.getenv("SENDER_EMAIL", SENDER_EMAIL))
+    sender_password = st.secrets.get("SENDER_PASSWORD", os.getenv("SENDER_PASSWORD", SENDER_PASSWORD))
+    maintenance_leads = st.secrets.get("MAINTENANCE_LEADS", os.getenv("MAINTENANCE_LEADS", MAINTENANCE_LEADS))
+    smtp_server = st.secrets.get("SMTP_SERVER", os.getenv("SMTP_SERVER", SMTP_SERVER))
+    smtp_port = int(st.secrets.get("SMTP_PORT", os.getenv("SMTP_PORT", SMTP_PORT)))
 
-    # Diagnostic check for missing secrets
     if not sender_email or not sender_password or not maintenance_leads:
-        msg = f"❌ MISSING SECRETS IN CLOUD: SENDER_EMAIL='{sender_email}', SENDER_PASSWORD={'SET' if sender_password else 'EMPTY'}, MAINTENANCE_LEADS='{maintenance_leads}'"
-        print(msg, flush=True)
-        st.error(msg)
         return
 
     recipients = [email.strip() for email in maintenance_leads.split(",") if email.strip()]
     if not recipients:
-        st.error("❌ No valid recipient emails found in MAINTENANCE_LEADS.")
         return
 
     subject = f"🚨 [CRITICAL ML ALERT] {mill} - {equipment} Anomaly Detected"
-    
     comments_html = "".join([f"<li style='color: #D32F2F;'><b>{c}</b></li>" for c in individual_comments])
     
     html_content = f"""
@@ -115,15 +105,8 @@ def send_critical_alert_email(mill: str, equipment: str, vibration: float, tempe
                 server.starttls()
                 server.login(sender_email, sender_password)
                 server.sendmail(sender_email, recipients, msg.as_string())
-        
-        success_msg = f"📧 Email successfully sent to {', '.join(recipients)}"
-        print(success_msg, flush=True)
-        st.success(success_msg)
-
     except Exception as e:
-        err_msg = f"❌ SMTP ERROR: {str(e)}"
-        print(err_msg, flush=True)
-        st.error(err_msg)
+        print(f"[ALERT ENGINE ERROR] Failed to send critical email notification: {e}")
 
 def _get_model_key(mill: str, equipment: str) -> tuple:
     return (mill.strip(), equipment.strip())
@@ -135,7 +118,6 @@ def init_equipment_model(mill: str, equipment: str):
     if key not in _MODEL_REGISTRY:
         model = IsolationForest(contamination=0.05, random_state=42)
         
-        # Define baseline characteristics per equipment type
         vib_base = 4.0 if equipment == "Mill Main Control" else 2.5
         temp_base = 62.0 if equipment == "E5 & E8 Cement Pumps" else 55.0
         
@@ -164,9 +146,6 @@ def analyze_telemetry_diagnostics(mill: str, equipment: str, vib: float, temp: f
     comments = []
     severity = "NORMAL"
     
-    # ---------------------------------------------------------------
-    # 1. PARAMETER DIAGNOSTICS (ISO 10816 & Thermal Limits)
-    # ---------------------------------------------------------------
     if vib > 7.0:
         comments.append(f"🔴 VIBRATION HIGH ({vib} mm/s): ISO Zone D breach on {mill} - {equipment}. Check shaft alignment & foundation bolts.")
         severity = "CRITICAL"
@@ -191,11 +170,8 @@ def analyze_telemetry_diagnostics(mill: str, equipment: str, vib: float, temp: f
     else:
         comments.append(f"🟢 Temperature Normal ({temp} °C).")
 
-    # ---------------------------------------------------------------
-    # 2. ISOLATED MACHINE LEARNING PREDICTION
-    # ---------------------------------------------------------------
     features = pd.DataFrame([[vib, temp]], columns=["vibration_mm_s", "temperature_c"])
-    prediction = model.predict(features)  # -1 = Anomaly, 1 = Normal
+    prediction = model.predict(features)
     score = model.decision_function(features)
     
     is_ml_anomaly = True if prediction[0] == -1 else False
@@ -214,9 +190,6 @@ def analyze_telemetry_diagnostics(mill: str, equipment: str, vib: float, temp: f
         comments.append(ml_comment)
         if severity == "NORMAL": severity = "WARNING"
 
-    # ---------------------------------------------------------------
-    # 3. TRIGGER AUTOMATED EMAIL NOTIFICATION FOR MAINTENANCE LEADS
-    # ---------------------------------------------------------------
     if severity == "CRITICAL":
         send_critical_alert_email(
             mill=mill,
@@ -242,7 +215,6 @@ def retrain_specific_equipment_model(mill: str, equipment: str, feedback_samples
     model = _MODEL_REGISTRY[key]
     buffer_df = _BUFFER_REGISTRY[key]
     
-    # ALWAYS ensure feature names match training DataFrame
     new_rows = pd.DataFrame(feedback_samples, columns=["vibration_mm_s", "temperature_c"])
     
     if was_true_failure:
@@ -253,14 +225,3 @@ def retrain_specific_equipment_model(mill: str, equipment: str, feedback_samples
     model.fit(updated_buffer)
     _MODEL_REGISTRY[key] = model
     _BUFFER_REGISTRY[key] = updated_buffer
-    
-    print(f"[ML REGISTRY] Retrained isolated model for {mill} -> {equipment}. Buffer size: {len(updated_buffer)} records.")
-
-if __name__ == "__main__":
-    # Test dispatch
-    analyze_telemetry_diagnostics(
-        mill="Mill 6", 
-        equipment="Dynamic Separator", 
-        vib=7.8, 
-        temp=88.5
-    )

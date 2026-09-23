@@ -1,7 +1,7 @@
 from datetime import datetime
 import streamlit as st
 import pandas as pd
-from ml_engine import retrain_specific_equipment_model, analyze_telemetry_diagnostics
+from ml_engine import retrain_specific_equipment_model
 from mock_data import get_shared_plant_engine
 
 # User Authentication Database
@@ -97,15 +97,11 @@ def render_global_header():
 
     st.markdown("<hr style='margin-top: 5px; margin-bottom: 15px; border: none; border-top: 1px solid #E0E0E0;'>", unsafe_allow_html=True)
 
-    # Tracking state to ensure search jumps trigger ONLY when new text is typed
     if "last_processed_search" not in st.session_state:
         st.session_state["last_processed_search"] = ""
 
     current_search = search_query.strip().lower()
 
-    # -------------------------------------------------------------------
-    # SCADA NAVIGATION SEARCH ROUTING (Only triggers on NEW query entry)
-    # -------------------------------------------------------------------
     if current_search and current_search != st.session_state["last_processed_search"]:
         st.session_state["last_processed_search"] = current_search
         
@@ -132,7 +128,6 @@ def render_global_header():
 
         should_rerun = False
 
-        # Check for Mill Routing (e.g., 'mill 1', 'mill 6')
         for mill in ["Mill 1", "Mill 2", "Mill 4", "Mill 5", "Mill 6"]:
             if mill.lower() in current_search:
                 st.session_state["nav_main_view"] = "Individual Mill Monitor"
@@ -140,7 +135,6 @@ def render_global_header():
                 should_rerun = True
                 break
 
-        # Check for SCADA Tag/Equipment Routing
         for tag, eq_name in tag_map.items():
             if tag in current_search:
                 st.session_state["nav_main_view"] = "Individual Mill Monitor"
@@ -158,52 +152,7 @@ def render_global_header():
     return search_query
 
 def render_servicing_desk(selected_mill: str, alerts_to_display: list):
-    """Renders the RBAC-protected servicing desk form, temporary email diagnostic test, and export log."""
-    
-    # -------------------------------------------------------------------
-    # TEMPORARY ALERT SYSTEM DIAGNOSTIC TESTING (RBAC: Reliability Engineer Only)
-    # -------------------------------------------------------------------
-    if st.session_state.get("user_role") == "Reliability Engineer":
-        with st.expander("🧪 Temporary ML Email Dispatch Test Console", expanded=False):
-            st.caption("Trigger an isolated critical alert report to verify Streamlit Cloud email dispatch.")
-            
-            tc1, tc2, tc3 = st.columns([2, 2, 2])
-            with tc1:
-                test_eq = st.selectbox(
-                    "Target Equipment", 
-                    ["Dynamic Separator", "E5 & E8 Cement Pumps", "Separator Filter Fan", "Mill Main Control", "Main Filter Fan"],
-                    key=f"test_eq_{selected_mill}"
-                )
-            with tc2:
-                st.write("")
-                st.write("")
-                if st.button("🚨 Dispatch Test Alert Email", type="primary", use_container_width=True, key=f"btn_send_test_{selected_mill}"):
-                    with st.spinner("Executing ML engine email dispatch..."):
-                        res = analyze_telemetry_diagnostics(
-                            mill=selected_mill,
-                            equipment=test_eq,
-                            vib=7.8,
-                            temp=88.5
-                        )
-                        st.session_state[f"test_email_status_{selected_mill}"] = {
-                            "time": datetime.now().strftime('%H:%M:%S'),
-                            "eq": test_eq,
-                            "severity": res["severity"]
-                        }
-                        st.rerun()
-                        
-            with tc3:
-                st.write("")
-                st.write("")
-                if st.button("🧹 Clear Test Results", use_container_width=True, key=f"btn_clear_test_{selected_mill}"):
-                    if f"test_email_status_{selected_mill}" in st.session_state:
-                        del st.session_state[f"test_email_status_{selected_mill}"]
-                        st.rerun()
-
-            if f"test_email_status_{selected_mill}" in st.session_state:
-                status_data = st.session_state[f"test_email_status_{selected_mill}"]
-                st.success(f"✅ Test executed at **{status_data['time']}** for **{selected_mill} - {status_data['eq']}** (Severity: {status_data['severity']}). Check inbox at `MAINTENANCE_LEADS`.")
-
+    """Renders the RBAC-protected servicing desk form and export log."""
     st.subheader(f"🛠️ {selected_mill} - Servicing Desk & Shift Handover")
     
     shared_engine = get_shared_plant_engine()
