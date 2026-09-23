@@ -53,13 +53,26 @@ class PlantDataEngine:
         """Worker task that pulls/generates SCADA packets regardless of active browser sessions."""
         now = datetime.now()
         new_rows = []
+        
+        # 🎲 2% chance per background cycle to simulate a critical hardware anomaly on a random unit
+        trigger_simulated_critical = (np.random.rand() < 0.02)
+        critical_mill_target = np.random.choice(PLANT_MILLS) if trigger_simulated_critical else None
+        critical_eq_target = np.random.choice(EQUIPMENT_LIST) if trigger_simulated_critical else None
+
         for mill in PLANT_MILLS:
             for eq in EQUIPMENT_LIST:
+                # Standard operational baselines
                 vib_base = 4.0 if eq == "Mill Main Control" else 2.5
                 temp_base = 62.0 if eq == "E5 & E8 Cement Pumps" else 55.0
                 
-                vib = np.random.normal(vib_base, 0.4)
-                temp = np.random.normal(temp_base, 1.2)
+                # Check if this specific subsystem is selected for a CRITICAL anomaly spike
+                if trigger_simulated_critical and mill == critical_mill_target and eq == critical_eq_target:
+                    # High vibration breach (ISO Zone D: > 7.0 mm/s) & High thermal breach (> 90 °C)
+                    vib = np.random.uniform(7.2, 9.0)
+                    temp = np.random.uniform(91.0, 98.0)
+                else:
+                    vib = np.random.normal(vib_base, 0.4)
+                    temp = np.random.normal(temp_base, 1.2)
                 
                 row = {
                     "timestamp": now,
