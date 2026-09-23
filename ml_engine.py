@@ -19,13 +19,28 @@ MAINTENANCE_LEADS = st.secrets.get("MAINTENANCE_LEADS", os.getenv("MAINTENANCE_L
 _MODEL_REGISTRY = {}
 _BUFFER_REGISTRY = {}
 
+import sys
+
 def send_critical_alert_email(mill: str, equipment: str, vibration: float, temperature: float, individual_comments: list):
-    if not SENDER_EMAIL or not SENDER_PASSWORD or not MAINTENANCE_LEADS:
-        print("⚠️ Email dispatch skipped: SMTP credentials or recipient list not set in secrets.toml.")
+    """Sends an automated HTML alert report to Maintenance Leads for CRITICAL ML predictions."""
+    
+    # Reload secrets directly inside the function call
+    sender_email = st.secrets.get("SENDER_EMAIL", os.getenv("SENDER_EMAIL", ""))
+    sender_password = st.secrets.get("SENDER_PASSWORD", os.getenv("SENDER_PASSWORD", ""))
+    maintenance_leads = st.secrets.get("MAINTENANCE_LEADS", os.getenv("MAINTENANCE_LEADS", ""))
+    smtp_server = st.secrets.get("SMTP_SERVER", os.getenv("SMTP_SERVER", "smtp.gmail.com"))
+    smtp_port = int(st.secrets.get("SMTP_PORT", os.getenv("SMTP_PORT", 465)))
+
+    # Diagnostic check for missing secrets
+    if not sender_email or not sender_password or not maintenance_leads:
+        msg = f"❌ MISSING SECRETS IN CLOUD: SENDER_EMAIL='{sender_email}', SENDER_PASSWORD={'SET' if sender_password else 'EMPTY'}, MAINTENANCE_LEADS='{maintenance_leads}'"
+        print(msg, flush=True)
+        st.error(msg)
         return
 
-    recipients = [email.strip() for email in MAINTENANCE_LEADS.split(",") if email.strip()]
+    recipients = [email.strip() for email in maintenance_leads.split(",") if email.strip()]
     if not recipients:
+        st.error("❌ No valid recipient emails found in MAINTENANCE_LEADS.")
         return
 
     subject = f"🚨 [CRITICAL ML ALERT] {mill} - {equipment} Anomaly Detected"
@@ -87,24 +102,28 @@ def send_critical_alert_email(mill: str, equipment: str, vibration: float, tempe
     try:
         msg = MIMEMultipart("alternative")
         msg["Subject"] = subject
-        msg["From"] = SENDER_EMAIL
+        msg["From"] = sender_email
         msg["To"] = ", ".join(recipients)
         msg.attach(MIMEText(html_content, "html"))
 
-        # Use SMTP_SSL for port 465 or standard SMTP with STARTTLS for port 587
-        if SMTP_PORT == 465:
-            with smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT, timeout=10) as server:
-                server.login(SENDER_EMAIL, SENDER_PASSWORD)
-                server.sendmail(SENDER_EMAIL, recipients, msg.as_string())
+        if smtp_port == 465:
+            with smtplib.SMTP_SSL(smtp_server, smtp_port, timeout=15) as server:
+                server.login(sender_email, sender_password)
+                server.sendmail(sender_email, recipients, msg.as_string())
         else:
-            with smtplib.SMTP(SMTP_SERVER, SMTP_PORT, timeout=10) as server:
+            with smtplib.SMTP(smtp_server, smtp_port, timeout=15) as server:
                 server.starttls()
-                server.login(SENDER_EMAIL, SENDER_PASSWORD)
-                server.sendmail(SENDER_EMAIL, recipients, msg.as_string())
+                server.login(sender_email, sender_password)
+                server.sendmail(sender_email, recipients, msg.as_string())
         
-        print(f"📧 Critical alert email successfully dispatched to: {', '.join(recipients)}")
+        success_msg = f"📧 Email successfully sent to {', '.join(recipients)}"
+        print(success_msg, flush=True)
+        st.success(success_msg)
+
     except Exception as e:
-        print(f"⚠️ Failed to send critical email notification: {e}")
+        err_msg = f"❌ SMTP ERROR: {str(e)}"
+        print(err_msg, flush=True)
+        st.error(err_msg)
 
 def _get_model_key(mill: str, equipment: str) -> tuple:
     return (mill.strip(), equipment.strip())
