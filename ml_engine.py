@@ -8,6 +8,13 @@ import pandas as pd
 import streamlit as st
 from sklearn.ensemble import IsolationForest
 
+# Import central database logger functions
+try:
+    from db_engine import log_alert_to_db, init_alert_db_table
+    init_alert_db_table()
+except Exception:
+    pass
+
 # Retrieve Email Secrets safely
 SMTP_SERVER = st.secrets.get("SMTP_SERVER", os.getenv("SMTP_SERVER", "smtp.gmail.com"))
 SMTP_PORT = int(st.secrets.get("SMTP_PORT", os.getenv("SMTP_PORT", 465)))
@@ -136,7 +143,7 @@ def init_equipment_model(mill: str, equipment: str):
 def analyze_telemetry_diagnostics(mill: str, equipment: str, vib: float, temp: float):
     """
     Evaluates telemetry against the SPECIFIC machine's dedicated ML model 
-    and parameter threshold limits.
+    and parameter threshold limits. Automatically logs critical alerts to PostgreSQL.
     """
     key = _get_model_key(mill, equipment)
     if key not in _MODEL_REGISTRY:
@@ -146,6 +153,7 @@ def analyze_telemetry_diagnostics(mill: str, equipment: str, vib: float, temp: f
     comments = []
     severity = "NORMAL"
     
+    # Threshold Checks
     if vib > 7.0:
         comments.append(f"🔴 VIBRATION HIGH ({vib} mm/s): ISO Zone D breach on {mill} - {equipment}. Check shaft alignment & foundation bolts.")
         severity = "CRITICAL"
@@ -170,6 +178,7 @@ def analyze_telemetry_diagnostics(mill: str, equipment: str, vib: float, temp: f
     else:
         comments.append(f"🟢 Temperature Normal ({temp} °C).")
 
+    # Isolated ML Prediction
     features = pd.DataFrame([[vib, temp]], columns=["vibration_mm_s", "temperature_c"])
     prediction = model.predict(features)
     score = model.decision_function(features)
@@ -190,7 +199,20 @@ def analyze_telemetry_diagnostics(mill: str, equipment: str, vib: float, temp: f
         comments.append(ml_comment)
         if severity == "NORMAL": severity = "WARNING"
 
+    # Persistent PostgreSQL Alert Logging & Email Notification Trigger
     if severity == "CRITICAL":
+        try:
+            log_alert_to_db(
+                mill=mill,
+                equipment=equipment,
+                severity=severity,
+                issue=f"ML Anomaly ({anomaly_probability}% Risk): Concurrent heat & vibration rise",
+                vib=vib,
+                temp=temp
+            )
+        except Exception as err:
+            print(f"[DB LOGGING ERROR] Could not persist alert to PostgreSQL: {err}")
+
         send_critical_alert_email(
             mill=mill,
             equipment=equipment,
