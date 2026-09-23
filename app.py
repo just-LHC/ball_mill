@@ -8,6 +8,7 @@ from mock_data import (
     PLANT_MILLS,
     EQUIPMENT_LIST
 )
+from db_engine import fetch_all_alerts
 from ui_components import (
     render_sidebar_auth, 
     render_global_header, 
@@ -68,29 +69,46 @@ if main_view == "Individual Mill Monitor":
 streaming_active = st.sidebar.toggle("Live Telemetry Stream", value=True)
 
 # -------------------------------------------------------------------
-# ISOLATED FRAGMENT: GENERAL PLANT OVERVIEW (READ ONLY)
+# ISOLATED FRAGMENT: GENERAL PLANT OVERVIEW (READS DIRECTLY FROM SUPABASE)
 # -------------------------------------------------------------------
 @st.fragment(run_every="3s" if streaming_active else None)
 def render_live_overview_matrix(search_query):
-    alerts_to_display = shared_engine.alerts_log
+    # Fetch live alerts directly from central Supabase PostgreSQL
+    all_db_alerts = fetch_all_alerts()
+    
+    # Fallback to in-memory log if DB is not populated yet
+    if not all_db_alerts:
+        all_db_alerts = shared_engine.alerts_log
+
+    alerts_to_display = all_db_alerts
     if search_query.strip():
         q = search_query.lower()
-        alerts_to_display = [a for a in shared_engine.alerts_log if q in str(a.get("id")).lower() or q in a.get("mill", "").lower() or q in a.get("equipment", "").lower() or q in a.get("issue", "").lower()]
+        alerts_to_display = [
+            a for a in all_db_alerts 
+            if q in str(a.get("id", "")).lower() 
+            or q in str(a.get("mill", "")).lower() 
+            or q in str(a.get("equipment", "")).lower() 
+            or q in str(a.get("issue", "")).lower()
+        ]
 
     st.subheader("🏛️ Plant General Command Overview")
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Operating Mills", f"{len(PLANT_MILLS)} Units")
-    c2.metric("Active Alerts", len([a for a in shared_engine.alerts_log if "ACTIVE" in a["status"]]), delta_color="inverse")
-    c3.metric("Critical Interlocks", len([a for a in shared_engine.alerts_log if "CRITICAL" in a["status"]]), delta_color="inverse")
-    c4.metric("ISO Warnings", len([a for a in shared_engine.alerts_log if "WARNING" in a["status"]]), delta_color="inverse")
+    c2.metric("Active Alerts", len([a for a in all_db_alerts if "ACTIVE" in str(a.get("status", "")).upper()]), delta_color="inverse")
+    c3.metric("Critical Interlocks", len([a for a in all_db_alerts if "CRITICAL" in str(a.get("severity", "")).upper() or "CRITICAL" in str(a.get("status", "")).upper()]), delta_color="inverse")
+    c4.metric("ISO Warnings", len([a for a in all_db_alerts if "WARNING" in str(a.get("severity", "")).upper() or "WARNING" in str(a.get("status", "")).upper()]), delta_color="inverse")
     
     st.markdown("---")
     st.subheader("Mill Operational Status Matrix")
     cols = st.columns(len(PLANT_MILLS))
     for i, mill_name in enumerate(PLANT_MILLS):
-        mill_alerts = [a for a in shared_engine.alerts_log if a["mill"] == mill_name and "ACTIVE" in a["status"]]
-        crit = len([a for a in mill_alerts if "CRITICAL" in a["status"]])
-        warn = len([a for a in mill_alerts if "WARNING" in a["status"]])
+        mill_alerts = [
+            a for a in all_db_alerts 
+            if str(a.get("mill", "")).strip().lower() == mill_name.strip().lower() 
+            and "ACTIVE" in str(a.get("status", "")).upper()
+        ]
+        crit = len([a for a in mill_alerts if "CRITICAL" in str(a.get("severity", "")).upper() or "CRITICAL" in str(a.get("status", "")).upper()])
+        warn = len([a for a in mill_alerts if "WARNING" in str(a.get("severity", "")).upper() or "WARNING" in str(a.get("status", "")).upper()])
         with cols[i]:
             st.markdown(f"### {mill_name}")
             if crit > 0: st.error(f"🔴 CRITICAL ({crit})")
@@ -98,26 +116,34 @@ def render_live_overview_matrix(search_query):
             else: st.success("🟢 NORMAL")
             st.write(f"**Pending:** {len(mill_alerts)} item(s)")
 
-    active_alerts = [a for a in alerts_to_display if "ACTIVE" in a["status"]]
-    crit_alerts = [a for a in active_alerts if "CRITICAL" in a["severity"]]
+    active_alerts = [a for a in alerts_to_display if "ACTIVE" in str(a.get("status", "")).upper()]
+    crit_alerts = [a for a in active_alerts if "CRITICAL" in str(a.get("severity", "")).upper() or "CRITICAL" in str(a.get("status", "")).upper()]
     if crit_alerts:
         st.markdown("---")
         st.markdown("##### 🚨 Critical ML Predictive Action Items:")
         for c in crit_alerts[:3]:
-            st.error(f"**[{c['mill']} — {c['equipment']}]** *{c['issue']}* — **Action:** Check P&ID tags & service.")
+            st.error(f"**[{c.get('mill', 'N/A')} — {c.get('equipment', 'N/A')}]** *{c.get('issue', 'Anomaly detected')}* — **Action:** Check P&ID tags & service.")
                 
     st.markdown("---")
     st.subheader("🚨 Active Plant Alert Log & Recommendations")
     if not active_alerts:
         st.success("🎉 All mill systems operating within normal ISO bounds.")
     else:
-        alerts_df = pd.DataFrame([{
-            "Alert ID": f"#{a['id']}", "Timestamp": a["timestamp"], "Mill": a["mill"],
-            "Equipment Subsystem": a["equipment"], "Severity": a["severity"],
-            "Root Cause Diagnostic": a["issue"],
-            "Recommended Action": a["individual_comments"][-1] if a.get("individual_comments") else "Inspect machine.",
-            "Servicing Status": a["status"]
-        } for a in active_alerts])
+        formatted_rows = []
+        for a in active_alerts:
+            comments = a.get("individual_comments", [])
+            rec_action = comments[-1] if comments and isinstance(comments, list) else "Inspect machine subsystem and verify RTD/vibration sensor seating."
+            formatted_rows.append({
+                "Alert ID": f"#{a.get('id', 'N/A')}",
+                "Timestamp": a.get("timestamp", "N/A"),
+                "Mill": a.get("mill", "N/A"),
+                "Equipment Subsystem": a.get("equipment", "N/A"),
+                "Severity": a.get("severity", "N/A"),
+                "Root Cause Diagnostic": a.get("issue", "N/A"),
+                "Recommended Action": rec_action,
+                "Servicing Status": a.get("status", "N/A")
+            })
+        alerts_df = pd.DataFrame(formatted_rows)
         st.dataframe(alerts_df, width="stretch", hide_index=True)
 
 # -------------------------------------------------------------------
@@ -201,5 +227,5 @@ elif main_view == "Individual Mill Monitor":
         render_live_drilldown_charts(selected_mill, selected_eq)
 
     elif mill_page == "Servicing Desk & Alert Log":
-        alerts_to_display = shared_engine.alerts_log
+        alerts_to_display = fetch_all_alerts() or shared_engine.alerts_log
         render_servicing_desk(selected_mill, alerts_to_display)

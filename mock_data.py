@@ -98,26 +98,42 @@ class PlantDataEngine:
         
         diag = analyze_telemetry_diagnostics(mill, eq, vib, temp)
         
-        with self._lock:
-            active_alerts = [
-                a for a in self.alerts_log 
-                if a["mill"] == mill and a["equipment"] == eq and "ACTIVE" in a["status"]
-            ]
-            
-            if not active_alerts and diag["severity"] != "NORMAL":
-                self.alerts_log.insert(0, {
-                    "id": len(self.alerts_log) + 1,
-                    "timestamp": timestamp.strftime("%Y-%m-%d %H:%M:%S"),
-                    "mill": mill,
-                    "equipment": eq,
-                    "severity": diag["severity"],
-                    "issue": diag["diagnostic_comments"],
-                    "individual_comments": diag["individual_comments"],
-                    "status": f"ACTIVE - {diag['severity']}",
-                    "vibration_snapshot": vib,
-                    "temperature_snapshot": temp,
-                    "operator_notes": "Pending Maintenance"
-                })
+        if diag["severity"] != "NORMAL":
+            # 1. Update local shared thread memory
+            with self._lock:
+                active_alerts = [
+                    a for a in self.alerts_log 
+                    if a["mill"] == mill and a["equipment"] == eq and "ACTIVE" in a["status"]
+                ]
+                
+                if not active_alerts:
+                    self.alerts_log.insert(0, {
+                        "id": len(self.alerts_log) + 1,
+                        "timestamp": timestamp.strftime("%Y-%m-%d %H:%M:%S"),
+                        "mill": mill,
+                        "equipment": eq,
+                        "severity": diag["severity"],
+                        "issue": diag["diagnostic_comments"],
+                        "individual_comments": diag["individual_comments"],
+                        "status": f"ACTIVE - {diag['severity']}",
+                        "vibration_snapshot": vib,
+                        "temperature_snapshot": temp,
+                        "operator_notes": "Pending Maintenance"
+                    })
+
+            # 2. Persist to central Supabase PostgreSQL database for cross-device & cloud visibility
+            try:
+                from db_engine import log_alert_to_db
+                log_alert_to_db(
+                    mill=mill,
+                    equipment=eq,
+                    severity=diag["severity"],
+                    issue=diag["diagnostic_comments"],
+                    vib=vib,
+                    temp=temp
+                )
+            except Exception:
+                pass
 
     def start_background_ingestion(self):
         """Launches an asynchronous daemon thread that keeps collecting telemetry every 3 seconds."""
