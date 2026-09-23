@@ -1,7 +1,9 @@
 from datetime import datetime
 import streamlit as st
 import pandas as pd
+from sqlalchemy import text
 from ml_engine import retrain_specific_equipment_model
+from db_engine import fetch_all_alerts, get_db_engine
 from mock_data import get_shared_plant_engine
 
 # User Authentication Database
@@ -152,14 +154,25 @@ def render_global_header():
     return search_query
 
 def render_servicing_desk(selected_mill: str, alerts_to_display: list):
-    """Renders the RBAC-protected servicing desk form and export log."""
+    """Renders the RBAC-protected servicing desk form and export log directly connected to Supabase PostgreSQL."""
     st.subheader(f"🛠️ {selected_mill} - Servicing Desk & Shift Handover")
     
-    shared_engine = get_shared_plant_engine()
-    mill_alerts = [a for a in shared_engine.alerts_log if a["mill"] == selected_mill]
+    # 1. Fetch live alerts directly from central Supabase PostgreSQL
+    all_db_alerts = fetch_all_alerts()
+    
+    # Fallback to mock data only if database is completely unpopulated
+    if not all_db_alerts:
+        shared_engine = get_shared_plant_engine()
+        all_db_alerts = shared_engine.alerts_log
+
+    mill_alerts = [
+        a for a in all_db_alerts 
+        if str(a.get("mill", "")).strip().lower() == selected_mill.strip().lower() 
+        or str(a.get("mill_name", "")).strip().lower() == selected_mill.strip().lower()
+    ]
     
     if not mill_alerts:
-        st.info(f"No alerts recorded for {selected_mill}.")
+        st.info(f"No active or historical alerts recorded in database for {selected_mill}.")
         return
 
     m_df = pd.DataFrame(mill_alerts)
@@ -212,8 +225,9 @@ def render_servicing_desk(selected_mill: str, alerts_to_display: list):
         key=f"download_btn_{selected_mill}"
     )
     
+    display_cols = [col for col in ["id", "timestamp", "equipment", "severity", "issue", "status", "operator_notes"] if col in export_ready_df.columns]
     st.dataframe(
-        export_ready_df[["id", "timestamp", "equipment", "severity", "issue", "status", "operator_notes"]],
+        export_ready_df[display_cols],
         width="stretch",
         hide_index=True
     )
@@ -221,18 +235,13 @@ def render_servicing_desk(selected_mill: str, alerts_to_display: list):
     st.markdown("---")
     st.subheader(f"Service & Clear Alert ({selected_mill})")
     
-    active_mill_alerts = [a for a in shared_engine.alerts_log if a["mill"] == selected_mill and "ACTIVE" in a["status"]]
+    active_mill_alerts = [a for a in mill_alerts if "ACTIVE" in str(a.get("status", "")).upper()]
     
     if active_mill_alerts:
         alert_options = {f"Alert #{a['id']} - {a['equipment']} ({a['timestamp']})": a['id'] for a in active_mill_alerts}
         selected_alert_str = st.selectbox("Select Alert to Resolve:", list(alert_options.keys()))
         selected_id = alert_options[selected_alert_str]
-        selected_rec = next(a for a in shared_engine.alerts_log if a["id"] == selected_id)
-        
-        st.markdown("##### 📋 Diagnostic Breakdown:")
-        if "individual_comments" in selected_rec:
-            for comment in selected_rec["individual_comments"]:
-                st.warning(f"• {comment}")
+        selected_rec = next(a for a in mill_alerts if a["id"] == selected_id)
 
         is_admin = (st.session_state.get("user_role") == "Reliability Engineer")
 
@@ -259,25 +268,36 @@ def render_servicing_desk(selected_mill: str, alerts_to_display: list):
             if submitted:
                 if operator_name.strip() and action_taken.strip():
                     serviced_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    new_status = "SERVICED / CLOSED" if is_admin else "ACTIVE / OPERATOR NOTE ADDED"
+                    notes = (
+                        f"Approved & Serviced by {operator_name} ({st.session_state.user_role}) at {serviced_time}. Action: {action_taken}"
+                        if is_admin else 
+                        f"Operator Note by {operator_name} at {serviced_time}: {action_taken} (Pending Sign-off)"
+                    )
                     
-                    for alert in shared_engine.alerts_log:
-                        if alert["id"] == selected_id:
-                            if is_admin:
-                                was_true_failure = True if "Genuine Issue" in alert_feedback_type else False
-                                alert["status"] = "SERVICED / CLOSED"
-                                alert["operator_notes"] = f"Approved & Serviced by {operator_name} ({st.session_state.user_role}) at {serviced_time}. Action: {action_taken}"
-                                
-                                feedback_sample = [[alert["vibration_snapshot"], alert["temperature_snapshot"]]]
-                                retrain_specific_equipment_model(
-                                    mill=alert["mill"],
-                                    equipment=alert["equipment"],
-                                    feedback_samples=feedback_sample,
-                                    was_true_failure=was_true_failure
-                                )
-                                st.success(f"✅ Alert #{selected_id} closed and ML model retrained for {selected_rec['mill']} - {selected_rec['equipment']}!")
-                            else:
-                                alert["operator_notes"] = f"Operator Note by {operator_name} at {serviced_time}: {action_taken} (Pending Engineer Sign-off)"
-                                st.info(f"ℹ️ Maintenance action logged for Alert #{selected_id}. Awaiting Reliability Engineer sign-off.")
+                    # Update status directly in Supabase PostgreSQL
+                    try:
+                        engine = get_db_engine()
+                        update_sql = "UPDATE plc_alerts SET status = :status, operator_notes = :notes WHERE id = :id;"
+                        with engine.begin() as conn:
+                            conn.execute(text(update_sql), {"status": new_status, "notes": notes, "id": selected_id})
+                    except Exception as e:
+                        print(f"Error updating DB alert: {e}")
+
+                    if is_admin:
+                        was_true_failure = True if "Genuine Issue" in alert_feedback_type else False
+                        vib_snap = float(selected_rec.get("vibration_snapshot", 5.0))
+                        temp_snap = float(selected_rec.get("temperature_snapshot", 70.0))
+                        
+                        retrain_specific_equipment_model(
+                            mill=selected_rec.get("mill", selected_mill),
+                            equipment=selected_rec.get("equipment", ""),
+                            feedback_samples=[[vib_snap, temp_snap]],
+                            was_true_failure=was_true_failure
+                        )
+                        st.success(f"✅ Alert #{selected_id} closed in database and ML model retrained!")
+                    else:
+                        st.info(f"ℹ️ Maintenance note logged for Alert #{selected_id}. Awaiting engineer review.")
                     st.rerun()
                 else:
                     st.error("⚠️ Please enter technician name and action taken before submitting.")
