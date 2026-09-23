@@ -1,64 +1,140 @@
-import time
 import os
-import numpy as np
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 from datetime import datetime
-import pandas as pd
-from sqlalchemy import create_engine, text
+import streamlit as st
 
-# Exact Supabase Pooler URI (IPv4 Port 6543)
-DATABASE_URL = os.getenv(
-    "DATABASE_URL", 
-    "postgresql://postgres.avzcqgwerokdyzdpflnz:Just72506537%40@aws-1-eu-west-1.pooler.supabase.com:6543/postgres"
-)
+# Retrieve Email Secrets safely
+SMTP_SERVER = st.secrets.get("SMTP_SERVER", os.getenv("SMTP_SERVER", "smtp.gmail.com"))
+SMTP_PORT = int(st.secrets.get("SMTP_PORT", os.getenv("SMTP_PORT", 587)))
+SENDER_EMAIL = st.secrets.get("SENDER_EMAIL", os.getenv("SENDER_EMAIL", ""))
+SENDER_PASSWORD = st.secrets.get("SENDER_PASSWORD", os.getenv("SENDER_PASSWORD", ""))
+MAINTENANCE_LEADS = st.secrets.get("MAINTENANCE_LEADS", os.getenv("MAINTENANCE_LEADS", ""))
 
-engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+def send_critical_alert_email(mill: str, equipment: str, vibration: float, temperature: float, diagnostic_comments: str, individual_comments: list):
+    """Sends an automated HTML alert report to Maintenance Leads for CRITICAL ML predictions."""
+    if not SENDER_EMAIL or not SENDER_PASSWORD or not MAINTENANCE_LEADS:
+        print("⚠️ Email dispatch skipped: SMTP credentials or recipient list not set in secrets.toml.")
+        return
 
-PLANT_MILLS = ["Mill 1", "Mill 2", "Mill 4", "Mill 5", "Mill 6"]
-EQUIPMENT_LIST = ["Dynamic Separator", "E5 & E8 Cement Pumps", "Separator Filter Fan", "Mill Main Control", "Main Filter Fan"]
+    recipients = [email.strip() for email in MAINTENANCE_LEADS.split(",") if email.strip()]
+    if not recipients:
+        return
 
-def init_remote_db():
-    with engine.begin() as conn:
-        conn.execute(text("""
-            CREATE TABLE IF NOT EXISTS plc_telemetry (
-                id SERIAL PRIMARY KEY,
-                timestamp TIMESTAMP NOT NULL,
-                mill VARCHAR(50) NOT NULL,
-                equipment VARCHAR(50) NOT NULL,
-                vibration_mm_s REAL NOT NULL,
-                temperature_c REAL NOT NULL
-            );
-        """))
-        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_mill_ts ON plc_telemetry(mill, timestamp);"))
-
-def poll_and_ingest():
-    now = datetime.now()
-    rows = []
-    for mill in PLANT_MILLS:
-        for eq in EQUIPMENT_LIST:
-            vib_base = 4.0 if eq == "Mill Main Control" else 2.5
-            temp_base = 62.0 if eq == "E5 & E8 Cement Pumps" else 55.0
-            
-            vib = round(max(0, np.random.normal(vib_base, 0.4)), 2)
-            temp = round(np.random.normal(temp_base, 1.2), 1)
-            
-            rows.append({
-                "timestamp": now,
-                "mill": mill,
-                "equipment": eq,
-                "vibration_mm_s": vib,
-                "temperature_c": temp
-            })
+    subject = f"🚨 [CRITICAL ML ALERT] {mill} - {equipment} Anomaly Detected"
     
-    df = pd.DataFrame(rows)
-    df.to_sql("plc_telemetry", engine, if_exists="append", index=False)
-    print(f"[{now.strftime('%H:%M:%S')}] 💾 Ingested {len(df)} telemetry tags to Cloud PostgreSQL.")
+    # Build HTML Email Body
+    comments_html = "".join([f"<li style='color: #D32F2F;'><b>{c}</b></li>" for c in individual_comments])
+    
+    html_content = f"""
+    <html>
+      <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333333;">
+        <div style="background-color: #D32F2F; padding: 15px; color: #ffffff; border-radius: 5px;">
+          <h2 style="margin:0;">🚨 LafargeHolcim Predictive Maintenance Alert</h2>
+          <p style="margin:5px 0 0 0; font-size: 14px;">Automated Anomaly Detection System — Côte d'Ivoire Plant Operations</p>
+        </div>
+        
+        <div style="padding: 20px; border: 1px solid #E0E0E0; border-radius: 5px; margin-top: 15px;">
+          <h3 style="color: #D32F2F; margin-top:0;">Critical Predictive Failure Warning</h3>
+          <p>The Machine Learning model has predicted an impending mechanical issue on <b>{mill}</b> requiring immediate inspection.</p>
+          
+          <table style="width: 100%; border-collapse: collapse; margin-top: 15px;">
+            <tr style="background-color: #F8F9FA;">
+              <td style="padding: 10px; border: 1px solid #DDD;"><b>Plant Unit:</b></td>
+              <td style="padding: 10px; border: 1px solid #DDD;">{mill}</td>
+            </tr>
+            <tr>
+              <td style="padding: 10px; border: 1px solid #DDD;"><b>Equipment Subsystem:</b></td>
+              <td style="padding: 10px; border: 1px solid #DDD;">{equipment}</td>
+            </tr>
+            <tr style="background-color: #F8F9FA;">
+              <td style="padding: 10px; border: 1px solid #DDD;"><b>Vibration RMS:</b></td>
+              <td style="padding: 10px; border: 1px solid #DDD; color: #D32F2F;"><b>{vibration} mm/s</b></td>
+            </tr>
+            <tr>
+              <td style="padding: 10px; border: 1px solid #DDD;"><b>Bearing Temperature:</b></td>
+              <td style="padding: 10px; border: 1px solid #DDD;"><b>{temperature} °C</b></td>
+            </tr>
+            <tr style="background-color: #F8F9FA;">
+              <td style="padding: 10px; border: 1px solid #DDD;"><b>Detection Time:</b></td>
+              <td style="padding: 10px; border: 1px solid #DDD;">{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</td>
+            </tr>
+          </table>
 
-if __name__ == "__main__":
-    init_remote_db()
-    print("🚀 Central Cloud Telemetry Daemon Running...")
-    while True:
-        try:
-            poll_and_ingest()
-        except Exception as e:
-            print(f"⚠️ Ingestion Warning: {e}")
-        time.sleep(3)
+          <h4>📋 Diagnostic Findings & Recommended Actions:</h4>
+          <ul>
+            {comments_html}
+          </ul>
+
+          <div style="margin-top: 25px; padding: 12px; background-color: #FFF3CD; border-left: 5px solid #FFC107;">
+            <b>Action Required:</b> Please log into the PdM Dashboard Servicing Desk to review full telemetry trends and log maintenance intervention notes.
+          </div>
+        </div>
+        
+        <p style="font-size: 11px; color: #888888; margin-top: 20px;">
+          This is an automated notification generated by LafargeHolcim Côte d'Ivoire PdM Suite. Do not reply to this email.
+        </p>
+      </body>
+    </html>
+    """
+
+    try:
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = subject
+        msg["From"] = SENDER_EMAIL
+        msg["To"] = ", ".join(recipients)
+        msg.attach(MIMEText(html_content, "html"))
+
+        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
+            server.starttls()
+            server.login(SENDER_EMAIL, SENDER_PASSWORD)
+            server.sendmail(SENDER_EMAIL, recipients, msg.as_string())
+        
+        print(f"📧 Critical alert email successfully dispatched to: {', '.join(recipients)}")
+    except Exception as e:
+        print(f"⚠️ Failed to send critical email notification: {e}")
+
+
+def analyze_telemetry_diagnostics(mill: str, equipment: str, vibration: float, temperature: float) -> dict:
+    """Evaluates sensor metrics against ML threshold bounds and triggers alerts."""
+    severity = "NORMAL"
+    individual_comments = []
+
+    # Threshold Check
+    if vibration > 7.0:
+        severity = "CRITICAL"
+        individual_comments.append(f"Vibration levels reached {vibration} mm/s (ISO 10816 Zone D Breach - Severe Structural/Bearing Anomaly).")
+    elif vibration > 4.5:
+        severity = "WARNING"
+        individual_comments.append(f"Elevated vibration at {vibration} mm/s (ISO 10816 Zone C Warning).")
+
+    if temperature > 85.0:
+        severity = "CRITICAL"
+        individual_comments.append(f"Critical thermal threshold exceeded: {temperature} °C (Risk of lubrication breakdown).")
+    elif temperature > 70.0 and severity != "CRITICAL":
+        severity = "WARNING"
+        individual_comments.append(f"Elevated bearing temperature: {temperature} °C.")
+
+    diagnostic_summary = " ".join(individual_comments) if individual_comments else "Operational metrics within normal ISO limits."
+
+    # Trigger Email Dispatch if CRITICAL
+    if severity == "CRITICAL":
+        send_critical_alert_email(
+            mill=mill,
+            equipment=equipment,
+            vibration=vibration,
+            temperature=temperature,
+            diagnostic_comments=diagnostic_summary,
+            individual_comments=individual_comments
+        )
+
+    return {
+        "severity": severity,
+        "diagnostic_comments": diagnostic_summary,
+        "individual_comments": individual_comments if individual_comments else ["All parameters nominal."]
+    }
+
+def retrain_specific_equipment_model(mill: str, equipment: str, feedback_samples: list, was_true_failure: bool):
+    """Placeholder for retraining isolated ML baseline model upon feedback submission."""
+    pass
