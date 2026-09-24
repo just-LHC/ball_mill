@@ -6,19 +6,65 @@ import threading
 import streamlit as st
 from ml_engine import analyze_telemetry_diagnostics
 
-PLANT_MILLS = ["Mill 1", "Mill 2", "Mill 4", "Mill 5", "Mill 6"]
+# Updated Mill Hierarchy & Specialized Configurations
+PLANT_MILLS = ["Mill 1 (White Cement)", "Mill 4", "Mill 5", "Mill 6"]
 
-EQUIPMENT_LIST = [
-    "Dynamic Separator",
-    "E5 & E8 Cement Pumps",
-    "Separator Filter Fan",
-    "Mill Main Control",
-    "Main Filter Fan"
-]
+MILL_EQUIPMENT_MAP = {
+    "Mill 6": [
+        "Dynamic Separator",
+        "Separator Filter Fan",
+        "Mill Main Control",
+        "Main Filter Fan"
+    ],
+    "Mill 5": [
+        "Dynamic Separator",
+        "Separator Filter Fan",
+        "Mill Main Control"
+    ],
+    "Mill 4": [
+        "Mill Main Control"
+    ],
+    "Mill 1 (White Cement)": [
+        "Mill Main Control"
+    ]
+}
 
-# -------------------------------------------------------------------
-# CONTINUOUS 24/7 BACKGROUND TELEMETRY INGESTION ENGINE
-# -------------------------------------------------------------------
+MILL_SENSOR_PROFILES = {
+    "Mill 6": {
+        "Dynamic Separator": {"vibration_sensors": 2, "temperature_sensors": 2, "notes": "2 Vibration & 2 Temperature sensors"},
+        "Separator Filter Fan": {"vibration_sensors": 2, "temperature_sensors": 2, "notes": "2 Vibration & 2 Temperature sensors"},
+        "Mill Main Control": {
+            "gearbox_ocp_vib": 10, "gearbox_hlc_vib": 2, "gearbox_temp": 12,
+            "motor_hlc_vib": 2, "motor_temp": 2,
+            "vibration_sensors": 14, "temperature_sensors": 14,
+            "notes": "Gearbox: 10 OCP Vib, 2 HLC Vib, 12 Temp | Motor: 2 HLC Vib, 2 Temp"
+        },
+        "Main Filter Fan": {"vibration_sensors": 2, "temperature_sensors": 0, "notes": "2 Vibration sensors"}
+    },
+    "Mill 5": {
+        "Mill Main Control": {
+            "gearbox_ocp_vib": 10, "gearbox_ocp_temp": 10,
+            "vibration_sensors": 10, "temperature_sensors": 10,
+            "notes": "Gearbox: 10 OCP Vibration & 10 OCP Temperature sensors"
+        },
+        "Dynamic Separator": {
+            "oil_pressure_sensors": 1, "motor_current_sensors": 1, "temperature_sensors": 1,
+            "vibration_sensors": 0,
+            "notes": "1 Oil Pressure, Motor Current & 1 Temperature sensor"
+        },
+        "Separator Filter Fan": {
+            "vibration_sensors": 2, "motor_current_sensors": 1, "temperature_sensors": 2,
+            "notes": "2 Vibration, Motor Current & 2 Temperature sensors"
+        }
+    },
+    "Mill 4": {
+        "Mill Main Control": {"vibration_sensors": 6, "temperature_sensors": 6, "notes": "6 Vibration & 6 Temperature sensors (Gearbox & Motor)"}
+    },
+    "Mill 1 (White Cement)": {
+        "Mill Main Control": {"vibration_sensors": 6, "temperature_sensors": 6, "notes": "6 Vibration & 6 Temperature sensors (Gearbox & Motor)"}
+    }
+}
+
 class PlantDataEngine:
     def __init__(self):
         self._lock = threading.Lock()
@@ -30,12 +76,12 @@ class PlantDataEngine:
     def _generate_initial_telemetry(self, num_records=60):
         now = datetime.now()
         data = []
-        for mill in PLANT_MILLS:
-            for eq in EQUIPMENT_LIST:
+        for mill, eq_list in MILL_EQUIPMENT_MAP.items():
+            for eq in eq_list:
                 for i in range(num_records):
                     timestamp = now - timedelta(minutes=(num_records - i))
                     vib_base = 4.0 if eq == "Mill Main Control" else 2.5
-                    temp_base = 62.0 if eq == "E5 & E8 Cement Pumps" else 55.0
+                    temp_base = 62.0 if eq == "Dynamic Separator" else 55.0
                     
                     vib = np.random.normal(vib_base, 0.3)
                     temp = np.random.normal(temp_base, 1.0)
@@ -50,34 +96,31 @@ class PlantDataEngine:
         return pd.DataFrame(data)
 
     def tick_live_telemetry(self):
-        """Worker task that pulls/generates SCADA packets regardless of active browser sessions."""
         now = datetime.now()
         new_rows = []
         
-        # 🎲 REAL-WORLD PROBABILISTIC DISTRIBUTIONS
-        # 3.0% chance of a WARNING level operational drift (ISO Zone C / Moderate Heat)
-        trigger_warning = (np.random.rand() < 0.000189)
-        # 0.2% chance of a CRITICAL failure trip (ISO Zone D breach > 7.0 mm/s or Temp > 90 °C)
-        trigger_critical = (np.random.rand() < 0.00002) if not trigger_warning else False
+        trigger_warning = (np.random.rand() < 0.03)
+        trigger_critical = (np.random.rand() < 0.002) if not trigger_warning else False
         
         target_mill = np.random.choice(PLANT_MILLS) if (trigger_warning or trigger_critical) else None
-        target_eq = np.random.choice(EQUIPMENT_LIST) if (trigger_warning or trigger_critical) else None
+        
+        if target_mill and target_mill in MILL_EQUIPMENT_MAP:
+            target_eq = np.random.choice(MILL_EQUIPMENT_MAP[target_mill])
+        else:
+            target_eq = None
 
-        for mill in PLANT_MILLS:
-            for eq in EQUIPMENT_LIST:
+        for mill, eq_list in MILL_EQUIPMENT_MAP.items():
+            for eq in eq_list:
                 vib_base = 4.0 if eq == "Mill Main Control" else 2.5
-                temp_base = 62.0 if eq == "E5 & E8 Cement Pumps" else 55.0
+                temp_base = 62.0 if eq == "Dynamic Separator" else 55.0
                 
                 if trigger_critical and mill == target_mill and eq == target_eq:
-                    # Rare Critical Spike -> Dispatches HTML Email Alert
                     vib = np.random.uniform(7.2, 8.8)
                     temp = np.random.uniform(91.0, 96.0)
                 elif trigger_warning and mill == target_mill and eq == target_eq:
-                    # Frequent Warning Drift -> Logged in DB & Servicing Desk without email noise
                     vib = np.random.uniform(4.8, 6.5)
                     temp = np.random.uniform(76.0, 88.0)
                 else:
-                    # Standard Nominal Operation
                     vib = np.random.normal(vib_base, 0.4)
                     temp = np.random.normal(temp_base, 1.2)
                 
@@ -106,7 +149,6 @@ class PlantDataEngine:
         diag = analyze_telemetry_diagnostics(mill, eq, vib, temp)
         
         if diag["severity"] != "NORMAL":
-            # 1. Update local thread memory
             with self._lock:
                 active_alerts = [
                     a for a in self.alerts_log 
@@ -128,7 +170,6 @@ class PlantDataEngine:
                         "operator_notes": "Pending Maintenance"
                     })
 
-            # 2. Persist to central Supabase PostgreSQL for cross-device visibility
             try:
                 from db_engine import log_alert_to_db
                 log_alert_to_db(
@@ -143,7 +184,6 @@ class PlantDataEngine:
                 pass
 
     def start_background_ingestion(self):
-        """Launches an asynchronous daemon thread that keeps collecting telemetry every 3 seconds."""
         if not self._bg_thread_started:
             self._bg_thread_started = True
             def _loop():
@@ -152,12 +192,11 @@ class PlantDataEngine:
                         self.tick_live_telemetry()
                     except Exception as e:
                         print(f"[BACKGROUND TELEMETRY WORKER ERROR] {e}")
-                    time.sleep(3) # 3-second SCADA ingestion interval
+                    time.sleep(3)
 
             thread = threading.Thread(target=_loop, daemon=True)
             thread.start()
 
-# SINGLETON SHARED ENGINE ACROSS ALL USERS AND BACKGROUND WORKERS
 @st.cache_resource
 def get_shared_plant_engine():
     return PlantDataEngine()
