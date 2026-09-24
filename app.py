@@ -24,7 +24,7 @@ if "nav_selected_mill" not in st.session_state:
 if "nav_mill_page" not in st.session_state:
     st.session_state["nav_mill_page"] = "Subsystem Overview"
 if "nav_selected_eq" not in st.session_state:
-    st.session_state["nav_selected_eq"] = "Separator Filter Fan"
+    st.session_state["nav_selected_eq"] = "Main Filter Fan"
 
 search_query = render_global_header()
 render_sidebar_auth()
@@ -169,13 +169,21 @@ def render_live_subsystem_cards(selected_mill):
                     st.metric("Temp 1 (Bearing)", f"{latest.get('temperature_c', 58.0)} °C")
                     st.metric("Temp 2 (Winding)", f"{latest.get('temperature_2_c', 60.0)} °C")
 
-                # Mill 5 Separator Filter Fan (5 Sensors)
+                # Mill 5 Separator Filter Fan
                 elif selected_mill == "Mill 5" and eq == "Separator Filter Fan":
                     st.metric("Vibration 1 (Fan)", f"{latest.get('vibration_mm_s', 2.4)} mm/s")
                     st.metric("Vibration 2 (Motor)", f"{latest.get('vibration_2_mm_s', 2.6)} mm/s")
                     st.metric("Temp 1 (Inlet)", f"{latest.get('temperature_c', 58.0)} °C")
                     st.metric("Temp 2 (Outlet)", f"{latest.get('temperature_2_c', 60.0)} °C")
                     st.metric("Motor Current", f"{latest.get('motor_current_a', 145.0)} A")
+
+                # Mill 6 Main Filter Fan (2 Vib + Motor Driver: Power, Speed, Temp)
+                elif selected_mill == "Mill 6" and eq == "Main Filter Fan":
+                    st.metric("Vibration 1 (Inlet)", f"{latest.get('vibration_mm_s', 2.4)} mm/s")
+                    st.metric("Vibration 2 (Outlet)", f"{latest.get('vibration_2_mm_s', 2.6)} mm/s")
+                    st.metric("Motor Power", f"{latest.get('electrical_power_kw', 320.0)} kW")
+                    st.metric("Motor Speed", f"{latest.get('motor_speed_rpm', 980.0)} RPM")
+                    st.metric("Motor Temp", f"{latest.get('motor_temp_c', 68.0)} °C")
                     
                 # General Fallback
                 else:
@@ -193,8 +201,40 @@ def render_live_drilldown_charts(selected_mill, selected_eq):
     if not eq_data.empty:
         st.markdown(f"### 📊 Live Sensor Signals — {selected_mill} ({selected_eq})")
         
+        # --- MILL 6 MAIN FILTER FAN: 5 INDIVIDUAL GRAPHS ---
+        if selected_mill == "Mill 6" and selected_eq == "Main Filter Fan":
+            v1 = eq_data["vibration_mm_s"] if "vibration_mm_s" in eq_data.columns else [2.4]*len(eq_data)
+            v2 = eq_data["vibration_2_mm_s"] if "vibration_2_mm_s" in eq_data.columns else [2.6]*len(eq_data)
+            power = eq_data["electrical_power_kw"] if "electrical_power_kw" in eq_data.columns else [320.0]*len(eq_data)
+            speed = eq_data["motor_speed_rpm"] if "motor_speed_rpm" in eq_data.columns else [980.0]*len(eq_data)
+            m_temp = eq_data["motor_temp_c"] if "motor_temp_c" in eq_data.columns else [68.0]*len(eq_data)
+
+            st.markdown("##### 🌀 Mechanical Vibration Transmitters")
+            c1, c2 = st.columns(2)
+            with c1:
+                fig1 = go.Figure(go.Scatter(x=eq_data["timestamp"], y=v1, line=dict(color="#00D2FF", width=2)))
+                fig1.update_layout(height=220, template="plotly_dark", title="Vibration Sensor 1 — Inlet Housing (mm/s)")
+                st.plotly_chart(fig1, width="stretch")
+            with c2:
+                fig2 = go.Figure(go.Scatter(x=eq_data["timestamp"], y=v2, line=dict(color="#33FF57", width=2)))
+                fig2.update_layout(height=220, template="plotly_dark", title="Vibration Sensor 2 — Outlet Housing (mm/s)")
+                st.plotly_chart(fig2, width="stretch")
+
+            st.markdown("##### ⚡ Motor Driver Electrical & Operating Telemetry")
+            fig3 = go.Figure(go.Scatter(x=eq_data["timestamp"], y=power, line=dict(color="#FFD700", width=2)))
+            fig3.update_layout(height=220, template="plotly_dark", title="Motor Driver — Electrical Power (kW)")
+            st.plotly_chart(fig3, width="stretch")
+
+            fig4 = go.Figure(go.Scatter(x=eq_data["timestamp"], y=speed, line=dict(color="#FF00FF", width=2)))
+            fig4.update_layout(height=220, template="plotly_dark", title="Motor Driver — Motor Speed (RPM)")
+            st.plotly_chart(fig4, width="stretch")
+
+            fig5 = go.Figure(go.Scatter(x=eq_data["timestamp"], y=m_temp, line=dict(color="#FF4500", width=2)))
+            fig5.update_layout(height=220, template="plotly_dark", title="Motor Driver — Motor Temperature (°C)")
+            st.plotly_chart(fig5, width="stretch")
+
         # --- MILL 5 SEPARATOR FILTER FAN: 5 INDIVIDUAL GRAPHS ---
-        if selected_mill == "Mill 5" and selected_eq == "Separator Filter Fan":
+        elif selected_mill == "Mill 5" and selected_eq == "Separator Filter Fan":
             v1 = eq_data["vibration_mm_s"] if "vibration_mm_s" in eq_data.columns else [2.4]*len(eq_data)
             v2 = eq_data["vibration_2_mm_s"] if "vibration_2_mm_s" in eq_data.columns else [2.6]*len(eq_data)
             t1 = eq_data["temperature_c"] if "temperature_c" in eq_data.columns else [58.0]*len(eq_data)
@@ -220,7 +260,6 @@ def render_live_drilldown_charts(selected_mill, selected_eq):
                 fig4.update_layout(height=220, template="plotly_dark", title="Temperature Sensor 2 — Outlet / Housing (°C)")
                 st.plotly_chart(fig4, width="stretch")
 
-            # 5th Graph: Motor Current
             fig5 = go.Figure(go.Scatter(x=eq_data["timestamp"], y=curr, line=dict(color="#D500F9", width=2)))
             fig5.update_layout(height=220, template="plotly_dark", title="Motor Current Sensor (Amperes)")
             st.plotly_chart(fig5, width="stretch")
