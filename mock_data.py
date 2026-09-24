@@ -7,7 +7,7 @@ import time
 import threading
 import streamlit as st
 
-# Safe import for ml_engine to prevent Streamlit 3.14 sys.modules KeyError on hot reload
+# Safe import for ml_engine
 try:
     if "ml_engine" in sys.modules and sys.modules["ml_engine"] is not None:
         ml_engine = sys.modules["ml_engine"]
@@ -15,7 +15,6 @@ try:
         ml_engine = importlib.import_module("ml_engine")
     analyze_telemetry_diagnostics = ml_engine.analyze_telemetry_diagnostics
 except Exception as e:
-    # Direct fallback if sys.modules key error occurs during thread execution
     from ml_engine import analyze_telemetry_diagnostics
 
 # Attach Streamlit ScriptRunContext safely
@@ -66,55 +65,56 @@ class PlantDataEngine:
                 for i in range(num_records):
                     timestamp = now - timedelta(minutes=(num_records - i))
                     
+                    # Normal baseline operational distributions (Unflagged)
                     record = {
                         "timestamp": timestamp,
                         "mill": mill,
                         "equipment": eq,
-                        "vibration_mm_s": round(max(0, np.random.normal(2.5, 0.3)), 2),
-                        "vibration_2_mm_s": round(max(0, np.random.normal(2.6, 0.3)), 2),
-                        "temperature_c": round(np.random.normal(58.0, 1.0), 1),
-                        "temperature_2_c": round(np.random.normal(60.0, 1.0), 1),
-                        "oil_pressure_bar": round(max(0, np.random.normal(4.2, 0.15)), 2),
-                        "motor_current_a": round(max(0, np.random.normal(145.0, 3.0)), 1),
-                        "electrical_power_kw": round(max(0, np.random.normal(320.0, 5.0)), 1),
-                        "motor_speed_rpm": round(max(0, np.random.normal(980.0, 10.0)), 0),
-                        "motor_temp_c": round(max(0, np.random.normal(68.0, 1.2)), 1)
+                        "vibration_mm_s": round(max(0.5, np.random.normal(1.8, 0.15)), 2),
+                        "vibration_2_mm_s": round(max(0.5, np.random.normal(1.9, 0.15)), 2),
+                        "temperature_c": round(np.random.normal(52.0, 0.8), 1),
+                        "temperature_2_c": round(np.random.normal(54.0, 0.8), 1),
+                        "oil_pressure_bar": round(max(0, np.random.normal(4.2, 0.10)), 2),
+                        "motor_current_a": round(max(0, np.random.normal(135.0, 2.0)), 1),
+                        "electrical_power_kw": round(max(0, np.random.normal(310.0, 3.0)), 1),
+                        "motor_speed_rpm": round(max(0, np.random.normal(990.0, 5.0)), 0),
+                        "motor_temp_c": round(max(0, np.random.normal(62.0, 0.8)), 1)
                     }
 
                     if mill == "Mill 6" and eq == "Mill Main Control":
                         for idx in range(1, 11):
-                            record[f"ocp_gb_vib_{idx}"] = round(max(0, np.random.normal(2.8 + idx*0.1, 0.3)), 2)
+                            record[f"ocp_gb_vib_{idx}"] = round(max(0.5, np.random.normal(1.6 + idx*0.05, 0.15)), 2)
                         for idx in range(1, 3):
-                            record[f"hlc_gb_vib_{idx}"] = round(max(0, np.random.normal(2.4, 0.25)), 2)
-                            record[f"ocp_mtr_vib_{idx}"] = round(max(0, np.random.normal(2.1, 0.2)), 2)
-                            record[f"hlc_mtr_tmp_{idx}"] = round(np.random.normal(62.0 + idx, 1.1), 1)
+                            record[f"hlc_gb_vib_{idx}"] = round(max(0.5, np.random.normal(1.5, 0.12)), 2)
+                            record[f"ocp_mtr_vib_{idx}"] = round(max(0.5, np.random.normal(1.4, 0.10)), 2)
+                            record[f"hlc_mtr_tmp_{idx}"] = round(np.random.normal(58.0 + idx, 0.8), 1)
 
                     elif mill == "Mill 5" and eq == "Mill Main Control":
                         for idx in range(1, 11):
-                            record[f"m5_ocp_gb1_vib_{idx}"] = round(max(0, np.random.normal(3.0 + idx*0.05, 0.3)), 2)
-                            record[f"m5_ocp_gb1_tmp_{idx}"] = round(np.random.normal(65.0 + idx*0.8, 1.0), 1)
+                            record[f"m5_ocp_gb1_vib_{idx}"] = round(max(0.5, np.random.normal(1.7 + idx*0.03, 0.15)), 2)
+                            record[f"m5_ocp_gb1_tmp_{idx}"] = round(np.random.normal(56.0 + idx*0.5, 0.8), 1)
                         for idx in range(1, 4):
-                            record[f"m5_hlc_gb1_vib_{idx}"] = round(max(0, np.random.normal(2.6, 0.2)), 2)
+                            record[f"m5_hlc_gb1_vib_{idx}"] = round(max(0.5, np.random.normal(1.6, 0.12)), 2)
                         for idx in range(1, 7):
-                            record[f"m5_hlc_gb2_tmp_{idx}"] = round(np.random.normal(68.0 + idx*0.5, 1.2), 1)
-                        record["m5_hlc_mtr_tmp_1"] = round(np.random.normal(64.5, 1.0), 1)
-                        record["m5_hlc_mtr_cur_1"] = round(max(0, np.random.normal(185.0, 4.0)), 1)
+                            record[f"m5_hlc_gb2_tmp_{idx}"] = round(np.random.normal(59.0 + idx*0.4, 0.8), 1)
+                        record["m5_hlc_mtr_tmp_1"] = round(np.random.normal(58.5, 0.8), 1)
+                        record["m5_hlc_mtr_cur_1"] = round(max(0, np.random.normal(165.0, 2.5)), 1)
 
                     elif mill == "Mill 4" and eq == "Mill Main Control":
                         for idx in range(1, 3):
-                            record[f"m4_gb_vib_{idx}"] = round(max(0, np.random.normal(2.5 + idx*0.1, 0.3)), 2)
+                            record[f"m4_gb_vib_{idx}"] = round(max(0.5, np.random.normal(1.7 + idx*0.05, 0.15)), 2)
                         for idx in range(1, 4):
-                            record[f"m4_gb_tmp_{idx}"] = round(np.random.normal(61.0 + idx*0.5, 1.0), 1)
+                            record[f"m4_gb_tmp_{idx}"] = round(np.random.normal(55.0 + idx*0.4, 0.8), 1)
                         for idx in range(1, 6):
-                            record[f"m4_mtr_tmp_{idx}"] = round(np.random.normal(63.0 + idx*0.6, 1.1), 1)
-                        record["m4_mtr_cur_1"] = round(max(0, np.random.normal(160.0, 3.5)), 1)
+                            record[f"m4_mtr_tmp_{idx}"] = round(np.random.normal(57.0 + idx*0.5, 0.8), 1)
+                        record["m4_mtr_cur_1"] = round(max(0, np.random.normal(150.0, 2.0)), 1)
 
                     elif mill == "Mill 1 (White Cement)" and eq == "Mill Main Control":
                         for idx in range(1, 3):
-                            record[f"m1_gb_vib_{idx}"] = round(max(0, np.random.normal(2.3 + idx*0.1, 0.25)), 2)
+                            record[f"m1_gb_vib_{idx}"] = round(max(0.5, np.random.normal(1.5 + idx*0.05, 0.12)), 2)
                         for idx in range(1, 4):
-                            record[f"m1_gb_tmp_{idx}"] = round(np.random.normal(59.0 + idx*0.5, 0.9), 1)
-                        record["m1_mtr_cur_1"] = round(max(0, np.random.normal(140.0, 3.0)), 1)
+                            record[f"m1_gb_tmp_{idx}"] = round(np.random.normal(53.0 + idx*0.4, 0.7), 1)
+                        record["m1_mtr_cur_1"] = round(max(0, np.random.normal(130.0, 2.0)), 1)
 
                     data.append(record)
         return pd.DataFrame(data)
@@ -123,8 +123,9 @@ class PlantDataEngine:
         now = datetime.now()
         new_rows = []
         
-        trigger_warning = (np.random.rand() < 0.03)
-        trigger_critical = (np.random.rand() < 0.002) if not trigger_warning else False
+        # Reduced probability of generating anomalies (0.3% warning, 0.05% critical)
+        trigger_warning = (np.random.rand() < 0.003)
+        trigger_critical = (np.random.rand() < 0.0005) if not trigger_warning else False
         
         target_mill = np.random.choice(PLANT_MILLS) if (trigger_warning or trigger_critical) else None
         target_eq = np.random.choice(MILL_EQUIPMENT_MAP[target_mill]) if target_mill and target_mill in MILL_EQUIPMENT_MAP else None
@@ -133,60 +134,60 @@ class PlantDataEngine:
             for eq in eq_list:
                 is_target = (trigger_warning or trigger_critical) and mill == target_mill and eq == target_eq
                 
-                vib1 = np.random.normal(7.8, 0.3) if is_target and trigger_critical else np.random.normal(2.4, 0.3)
-                temp1 = np.random.normal(93.0, 1.0) if is_target and trigger_critical else np.random.normal(58.0, 1.0)
+                vib1 = np.random.normal(7.8, 0.3) if is_target and trigger_critical else (np.random.normal(5.2, 0.3) if is_target else np.random.normal(1.8, 0.15))
+                temp1 = np.random.normal(93.0, 1.0) if is_target and trigger_critical else (np.random.normal(78.0, 1.0) if is_target else np.random.normal(52.0, 0.8))
 
                 record = {
                     "timestamp": now,
                     "mill": mill,
                     "equipment": eq,
-                    "vibration_mm_s": round(max(0, vib1), 2),
-                    "vibration_2_mm_s": round(max(0, np.random.normal(2.6, 0.3)), 2),
+                    "vibration_mm_s": round(max(0.5, vib1), 2),
+                    "vibration_2_mm_s": round(max(0.5, np.random.normal(1.9, 0.15)), 2),
                     "temperature_c": round(temp1, 1),
-                    "temperature_2_c": round(np.random.normal(60.0, 1.0), 1),
-                    "oil_pressure_bar": round(max(0, np.random.normal(4.2, 0.15)), 2),
-                    "motor_current_a": round(max(0, np.random.normal(145.0, 3.0)), 1),
-                    "electrical_power_kw": round(max(0, np.random.normal(320.0, 5.0)), 1),
-                    "motor_speed_rpm": round(max(0, np.random.normal(980.0, 10.0)), 0),
-                    "motor_temp_c": round(max(0, np.random.normal(68.0, 1.2)), 1)
+                    "temperature_2_c": round(np.random.normal(54.0, 0.8), 1),
+                    "oil_pressure_bar": round(max(0, np.random.normal(4.2, 0.10)), 2),
+                    "motor_current_a": round(max(0, np.random.normal(135.0, 2.0)), 1),
+                    "electrical_power_kw": round(max(0, np.random.normal(310.0, 3.0)), 1),
+                    "motor_speed_rpm": round(max(0, np.random.normal(990.0, 5.0)), 0),
+                    "motor_temp_c": round(max(0, np.random.normal(62.0, 0.8)), 1)
                 }
 
-                mult = 2.5 if is_target and trigger_critical else 1.0
+                mult = 2.5 if is_target and trigger_critical else (1.6 if is_target else 1.0)
 
                 if mill == "Mill 6" and eq == "Mill Main Control":
                     for idx in range(1, 11):
-                        record[f"ocp_gb_vib_{idx}"] = round(max(0, np.random.normal((2.8 + idx*0.1)*mult, 0.3)), 2)
+                        record[f"ocp_gb_vib_{idx}"] = round(max(0.5, np.random.normal((1.6 + idx*0.05)*mult, 0.15)), 2)
                     for idx in range(1, 3):
-                        record[f"hlc_gb_vib_{idx}"] = round(max(0, np.random.normal(2.4*mult, 0.25)), 2)
-                        record[f"ocp_mtr_vib_{idx}"] = round(max(0, np.random.normal(2.1*mult, 0.2)), 2)
-                        record[f"hlc_mtr_tmp_{idx}"] = round(np.random.normal((62.0 + idx)*mult, 1.1), 1)
+                        record[f"hlc_gb_vib_{idx}"] = round(max(0.5, np.random.normal(1.5*mult, 0.12)), 2)
+                        record[f"ocp_mtr_vib_{idx}"] = round(max(0.5, np.random.normal(1.4*mult, 0.10)), 2)
+                        record[f"hlc_mtr_tmp_{idx}"] = round(np.random.normal((58.0 + idx)*mult, 0.8), 1)
 
                 elif mill == "Mill 5" and eq == "Mill Main Control":
                     for idx in range(1, 11):
-                        record[f"m5_ocp_gb1_vib_{idx}"] = round(max(0, np.random.normal((3.0 + idx*0.05)*mult, 0.3)), 2)
-                        record[f"m5_ocp_gb1_tmp_{idx}"] = round(np.random.normal((65.0 + idx*0.8)*mult, 1.0), 1)
+                        record[f"m5_ocp_gb1_vib_{idx}"] = round(max(0.5, np.random.normal((1.7 + idx*0.03)*mult, 0.15)), 2)
+                        record[f"m5_ocp_gb1_tmp_{idx}"] = round(np.random.normal((56.0 + idx*0.5)*mult, 0.8), 1)
                     for idx in range(1, 4):
-                        record[f"m5_hlc_gb1_vib_{idx}"] = round(max(0, np.random.normal(2.6*mult, 0.2)), 2)
+                        record[f"m5_hlc_gb1_vib_{idx}"] = round(max(0.5, np.random.normal(1.6*mult, 0.12)), 2)
                     for idx in range(1, 7):
-                        record[f"m5_hlc_gb2_tmp_{idx}"] = round(np.random.normal((68.0 + idx*0.5)*mult, 1.2), 1)
-                    record["m5_hlc_mtr_tmp_1"] = round(np.random.normal(64.5*mult, 1.0), 1)
-                    record["m5_hlc_mtr_cur_1"] = round(max(0, np.random.normal(185.0*mult, 4.0)), 1)
+                        record[f"m5_hlc_gb2_tmp_{idx}"] = round(np.random.normal((59.0 + idx*0.4)*mult, 0.8), 1)
+                    record["m5_hlc_mtr_tmp_1"] = round(np.random.normal(58.5*mult, 0.8), 1)
+                    record["m5_hlc_mtr_cur_1"] = round(max(0, np.random.normal(165.0*mult, 2.5)), 1)
 
                 elif mill == "Mill 4" and eq == "Mill Main Control":
                     for idx in range(1, 3):
-                        record[f"m4_gb_vib_{idx}"] = round(max(0, np.random.normal((2.5 + idx*0.1)*mult, 0.3)), 2)
+                        record[f"m4_gb_vib_{idx}"] = round(max(0.5, np.random.normal((1.7 + idx*0.05)*mult, 0.15)), 2)
                     for idx in range(1, 4):
-                        record[f"m4_gb_tmp_{idx}"] = round(np.random.normal((61.0 + idx*0.5)*mult, 1.0), 1)
+                        record[f"m4_gb_tmp_{idx}"] = round(np.random.normal((55.0 + idx*0.4)*mult, 0.8), 1)
                     for idx in range(1, 6):
-                        record[f"m4_mtr_tmp_{idx}"] = round(np.random.normal((63.0 + idx*0.6)*mult, 1.1), 1)
-                    record["m4_mtr_cur_1"] = round(max(0, np.random.normal(160.0*mult, 3.5)), 1)
+                        record[f"m4_mtr_tmp_{idx}"] = round(np.random.normal((57.0 + idx*0.5)*mult, 0.8), 1)
+                    record["m4_mtr_cur_1"] = round(max(0, np.random.normal(150.0*mult, 2.0)), 1)
 
                 elif mill == "Mill 1 (White Cement)" and eq == "Mill Main Control":
                     for idx in range(1, 3):
-                        record[f"m1_gb_vib_{idx}"] = round(max(0, np.random.normal((2.3 + idx*0.1)*mult, 0.25)), 2)
+                        record[f"m1_gb_vib_{idx}"] = round(max(0.5, np.random.normal((1.5 + idx*0.05)*mult, 0.12)), 2)
                     for idx in range(1, 4):
-                        record[f"m1_gb_tmp_{idx}"] = round(np.random.normal((59.0 + idx*0.5)*mult, 0.9), 1)
-                    record["m1_mtr_cur_1"] = round(max(0, np.random.normal(140.0*mult, 3.0)), 1)
+                        record[f"m1_gb_tmp_{idx}"] = round(np.random.normal((53.0 + idx*0.4)*mult, 0.7), 1)
+                    record["m1_mtr_cur_1"] = round(max(0, np.random.normal(130.0*mult, 2.0)), 1)
 
                 new_rows.append(record)
                 self._evaluate_and_log_alert(record)
