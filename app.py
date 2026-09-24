@@ -24,7 +24,7 @@ if "nav_selected_mill" not in st.session_state:
 if "nav_mill_page" not in st.session_state:
     st.session_state["nav_mill_page"] = "Subsystem Overview"
 if "nav_selected_eq" not in st.session_state:
-    st.session_state["nav_selected_eq"] = "Dynamic Separator"
+    st.session_state["nav_selected_eq"] = "Mill Main Control"
 
 search_query = render_global_header()
 render_sidebar_auth()
@@ -149,7 +149,7 @@ def render_live_subsystem_cards(selected_mill):
                 elif health > 50: st.warning(f"Health: {health}%")
                 else: st.error(f"Health: {health}%")
                 
-                # Mill 6 Main Control
+                # Mill 6 Main Control (16 Sensors)
                 if selected_mill == "Mill 6" and eq == "Mill Main Control":
                     st.markdown("**🔹 OCP Company**")
                     for idx in range(1, 11):
@@ -162,7 +162,7 @@ def render_live_subsystem_cards(selected_mill):
                     for idx in range(1, 3):
                         st.metric(f"HLC Mtr Temp #{idx}", f"{latest.get(f'hlc_mtr_tmp_{idx}', 62.0)} °C")
 
-                # Mill 5 Main Control
+                # Mill 5 Main Control (31 Sensors)
                 elif selected_mill == "Mill 5" and eq == "Mill Main Control":
                     st.markdown("**🔹 OCP Company**")
                     for idx in range(1, 11):
@@ -176,6 +176,30 @@ def render_live_subsystem_cards(selected_mill):
                         st.metric(f"HLC GB2 Temp #{idx}", f"{latest.get(f'm5_hlc_gb2_tmp_{idx}', 68.0)} °C")
                     st.metric("HLC Mtr Temp #1", f"{latest.get('m5_hlc_mtr_tmp_1', 64.5)} °C")
                     st.metric("HLC Mtr Cur #1", f"{latest.get('m5_hlc_mtr_cur_1', 185.0)} A")
+
+                # Mill 4 Main Control (11 Sensors)
+                elif selected_mill == "Mill 4" and eq == "Mill Main Control":
+                    st.markdown("**⚙️ Gearbox Sensors (5 Channels)**")
+                    for idx in range(1, 3):
+                        st.metric(f"GB Vibration #{idx}", f"{latest.get(f'm4_gb_vib_{idx}', 2.5)} mm/s")
+                    for idx in range(1, 4):
+                        st.metric(f"GB Temperature #{idx}", f"{latest.get(f'm4_gb_tmp_{idx}', 61.0)} °C")
+                    
+                    st.markdown("**⚡ Motor Sensors (6 Channels)**")
+                    for idx in range(1, 6):
+                        st.metric(f"Motor Temp #{idx}", f"{latest.get(f'm4_mtr_tmp_{idx}', 63.0)} °C")
+                    st.metric("Motor Current #1", f"{latest.get('m4_mtr_cur_1', 160.0)} A")
+
+                # Mill 1 (White Cement) Main Control (6 Sensors)
+                elif selected_mill == "Mill 1 (White Cement)" and eq == "Mill Main Control":
+                    st.markdown("**⚙️ Gearbox Sensors (5 Channels)**")
+                    for idx in range(1, 3):
+                        st.metric(f"GB Vibration #{idx}", f"{latest.get(f'm1_gb_vib_{idx}', 2.3)} mm/s")
+                    for idx in range(1, 4):
+                        st.metric(f"GB Temperature #{idx}", f"{latest.get(f'm1_gb_tmp_{idx}', 59.0)} °C")
+                    
+                    st.markdown("**⚡ Motor Sensors (1 Channel)**")
+                    st.metric("Motor Current #1", f"{latest.get('m1_mtr_cur_1', 140.0)} A")
 
                 # Mill 6 Dynamic Separator
                 elif selected_mill == "Mill 6" and eq == "Dynamic Separator":
@@ -219,7 +243,7 @@ def render_live_subsystem_cards(selected_mill):
                     st.metric("Bearing Temp", f"{latest.get('temperature_c', 55.0)} °C")
 
 # -------------------------------------------------------------------
-# DRILL-DOWN: ALL SUBSYSTEM MULTI-GRAPH CHARTS RESTORED
+# DRILL-DOWN: ALL SUBSYSTEM MULTI-GRAPH CHARTS
 # -------------------------------------------------------------------
 @st.fragment(run_every="3s" if streaming_active else None)
 def render_live_drilldown_charts(selected_mill, selected_eq):
@@ -229,8 +253,62 @@ def render_live_drilldown_charts(selected_mill, selected_eq):
     if not eq_data.empty:
         st.markdown(f"### 📊 Live Sensor Signals — {selected_mill} ({selected_eq})")
         
-        # 1. MILL 6 MAIN CONTROL (16 GRAPHS)
-        if selected_mill == "Mill 6" and selected_eq == "Mill Main Control":
+        # 1. MILL 4 MAIN CONTROL (11 GRAPHS: 5 Gearbox + 6 Motor)
+        if selected_mill == "Mill 4" and selected_eq == "Mill Main Control":
+            st.markdown("#### ⚙️ Gearbox Sensors (5 Graphs)")
+            c_gb1, c_gb2 = st.columns(2)
+            for i in range(1, 3):
+                val = eq_data[f"m4_gb_vib_{i}"] if f"m4_gb_vib_{i}" in eq_data.columns else [2.5]*len(eq_data)
+                fig = go.Figure(go.Scatter(x=eq_data["timestamp"], y=val, line=dict(color="#00D2FF", width=2)))
+                fig.update_layout(height=200, template="plotly_dark", title=f"Gearbox Vib Sensor #{i} — Tag: M4-GB-VIB-{i:02d} (mm/s)")
+                c_gb1.plotly_chart(fig, width="stretch")
+
+            for i in range(1, 4):
+                val = eq_data[f"m4_gb_tmp_{i}"] if f"m4_gb_tmp_{i}" in eq_data.columns else [61.0]*len(eq_data)
+                fig = go.Figure(go.Scatter(x=eq_data["timestamp"], y=val, line=dict(color="#FF8C00", width=2)))
+                fig.update_layout(height=200, template="plotly_dark", title=f"Gearbox Temp Sensor #{i} — Tag: M4-GB-TMP-{i:02d} (°C)")
+                c_gb2.plotly_chart(fig, width="stretch")
+
+            st.markdown("---")
+            st.markdown("#### ⚡ Motor Sensors (6 Graphs)")
+            c_m1, c_m2 = st.columns(2)
+            for i in range(1, 6):
+                target = c_m1 if i % 2 != 0 else c_m2
+                val = eq_data[f"m4_mtr_tmp_{i}"] if f"m4_mtr_tmp_{i}" in eq_data.columns else [63.0]*len(eq_data)
+                fig = go.Figure(go.Scatter(x=eq_data["timestamp"], y=val, line=dict(color="#FF33A8", width=2)))
+                fig.update_layout(height=200, template="plotly_dark", title=f"Motor Temp Sensor #{i} — Tag: M4-MTR-TMP-{i:02d} (°C)")
+                target.plotly_chart(fig, width="stretch")
+
+            cur_m4 = eq_data["m4_mtr_cur_1"] if "m4_mtr_cur_1" in eq_data.columns else [160.0]*len(eq_data)
+            fig_cur = go.Figure(go.Scatter(x=eq_data["timestamp"], y=cur_m4, line=dict(color="#D500F9", width=2)))
+            fig_cur.update_layout(height=200, template="plotly_dark", title="Motor Current Sensor #1 — Tag: M4-MTR-CUR-01 (Amperes)")
+            st.plotly_chart(fig_cur, width="stretch")
+
+        # 2. MILL 1 (WHITE CEMENT) MAIN CONTROL (6 GRAPHS: 5 Gearbox + 1 Motor)
+        elif selected_mill == "Mill 1 (White Cement)" and selected_eq == "Mill Main Control":
+            st.markdown("#### ⚙️ Gearbox Sensors (5 Graphs)")
+            c_m1_1, c_m1_2 = st.columns(2)
+            for i in range(1, 3):
+                val = eq_data[f"m1_gb_vib_{i}"] if f"m1_gb_vib_{i}" in eq_data.columns else [2.3]*len(eq_data)
+                fig = go.Figure(go.Scatter(x=eq_data["timestamp"], y=val, line=dict(color="#00E5FF", width=2)))
+                fig.update_layout(height=200, template="plotly_dark", title=f"Gearbox Vib Sensor #{i} — Tag: M1-GB-VIB-{i:02d} (mm/s)")
+                c_m1_1.plotly_chart(fig, width="stretch")
+
+            for i in range(1, 4):
+                val = eq_data[f"m1_gb_tmp_{i}"] if f"m1_gb_tmp_{i}" in eq_data.columns else [59.0]*len(eq_data)
+                fig = go.Figure(go.Scatter(x=eq_data["timestamp"], y=val, line=dict(color="#FF9100", width=2)))
+                fig.update_layout(height=200, template="plotly_dark", title=f"Gearbox Temp Sensor #{i} — Tag: M1-GB-TMP-{i:02d} (°C)")
+                c_m1_2.plotly_chart(fig, width="stretch")
+
+            st.markdown("---")
+            st.markdown("#### ⚡ Motor Sensors (1 Graph)")
+            cur_m1 = eq_data["m1_mtr_cur_1"] if "m1_mtr_cur_1" in eq_data.columns else [140.0]*len(eq_data)
+            fig_cur1 = go.Figure(go.Scatter(x=eq_data["timestamp"], y=cur_m1, line=dict(color="#76FF03", width=2)))
+            fig_cur1.update_layout(height=220, template="plotly_dark", title="Motor Current Sensor #1 — Tag: M1-MTR-CUR-01 (Amperes)")
+            st.plotly_chart(fig_cur1, width="stretch")
+
+        # 3. MILL 6 MAIN CONTROL (16 GRAPHS)
+        elif selected_mill == "Mill 6" and selected_eq == "Mill Main Control":
             st.markdown("#### ⚙️ Gearbox Sensors (12 Graphs)")
             st.markdown("##### OCP Company — Gearbox Vibration Sensors (10 Channels)")
             cols_gb1 = st.columns(2)
@@ -264,7 +342,7 @@ def render_live_drilldown_charts(selected_mill, selected_eq):
                 fig.update_layout(height=200, template="plotly_dark", title=f"HLC Motor Temp #{i} — Tag: HLC-MTR-TMP-{i:02d} (°C)")
                 cols_mtr[1].plotly_chart(fig, width="stretch")
 
-        # 2. MILL 5 MAIN CONTROL (31 GRAPHS)
+        # 4. MILL 5 MAIN CONTROL (31 GRAPHS)
         elif selected_mill == "Mill 5" and selected_eq == "Mill Main Control":
             with st.expander("⚙️ Gearbox Section One — 23 Channels (10 OCP Vib, 10 OCP Temp, 3 HLC Vib)", expanded=True):
                 st.markdown("##### OCP Company — Gearbox 1 Vibration Sensors (10 Channels)")
@@ -316,7 +394,7 @@ def render_live_drilldown_charts(selected_mill, selected_eq):
                 fig_mc.update_layout(height=200, template="plotly_dark", title="HLC Motor Current #1 — Tag: HLC-M5-MTR-CUR-01 (Amperes)")
                 cm2.plotly_chart(fig_mc, width="stretch")
 
-        # 3. MILL 6 MAIN FILTER FAN (5 GRAPHS)
+        # 5. MILL 6 MAIN FILTER FAN (5 GRAPHS)
         elif selected_mill == "Mill 6" and selected_eq == "Main Filter Fan":
             v1 = eq_data["vibration_mm_s"] if "vibration_mm_s" in eq_data.columns else [2.4]*len(eq_data)
             v2 = eq_data["vibration_2_mm_s"] if "vibration_2_mm_s" in eq_data.columns else [2.6]*len(eq_data)
@@ -348,7 +426,7 @@ def render_live_drilldown_charts(selected_mill, selected_eq):
             fig5.update_layout(height=220, template="plotly_dark", title="Motor Driver — Motor Temperature (°C)")
             st.plotly_chart(fig5, width="stretch")
 
-        # 4. MILL 5 SEPARATOR FILTER FAN (5 GRAPHS)
+        # 6. MILL 5 SEPARATOR FILTER FAN (5 GRAPHS)
         elif selected_mill == "Mill 5" and selected_eq == "Separator Filter Fan":
             v1 = eq_data["vibration_mm_s"] if "vibration_mm_s" in eq_data.columns else [2.4]*len(eq_data)
             v2 = eq_data["vibration_2_mm_s"] if "vibration_2_mm_s" in eq_data.columns else [2.6]*len(eq_data)
@@ -376,7 +454,7 @@ def render_live_drilldown_charts(selected_mill, selected_eq):
             fig5.update_layout(height=220, template="plotly_dark", title="Motor Current Sensor (Amperes)")
             st.plotly_chart(fig5, width="stretch")
 
-        # 5. MILL 6 SEPARATOR & SEPARATOR FILTER FAN (4 GRAPHS)
+        # 7. MILL 6 SEPARATOR & SEPARATOR FILTER FAN (4 GRAPHS)
         elif selected_mill == "Mill 6" and selected_eq in ["Dynamic Separator", "Separator Filter Fan"]:
             v1 = eq_data["vibration_mm_s"] if "vibration_mm_s" in eq_data.columns else [2.4]*len(eq_data)
             v2 = eq_data["vibration_2_mm_s"] if "vibration_2_mm_s" in eq_data.columns else [2.6]*len(eq_data)
@@ -399,7 +477,7 @@ def render_live_drilldown_charts(selected_mill, selected_eq):
                 fig4.update_layout(height=225, template="plotly_dark", title="Temperature Sensor 2 — Motor Winding/Outlet (°C)")
                 st.plotly_chart(fig4, width="stretch")
 
-        # 6. MILL 5 DYNAMIC SEPARATOR (3 GRAPHS)
+        # 8. MILL 5 DYNAMIC SEPARATOR (3 GRAPHS)
         elif selected_mill == "Mill 5" and selected_eq == "Dynamic Separator":
             p_val = eq_data["oil_pressure_bar"] if "oil_pressure_bar" in eq_data.columns else [4.2]*len(eq_data)
             t_val = eq_data["temperature_c"] if "temperature_c" in eq_data.columns else [61.5]*len(eq_data)
@@ -417,7 +495,7 @@ def render_live_drilldown_charts(selected_mill, selected_eq):
             fig_i.update_layout(height=220, template="plotly_dark", title="Motor Current Sensor (Amperes)")
             st.plotly_chart(fig_i, width="stretch")
 
-        # 7. GENERAL FALLBACK DRILL-DOWN
+        # 9. GENERAL FALLBACK DRILL-DOWN
         else:
             v_val = eq_data["vibration_mm_s"] if "vibration_mm_s" in eq_data.columns else [2.5]*len(eq_data)
             t_val = eq_data["temperature_c"] if "temperature_c" in eq_data.columns else [55.0]*len(eq_data)
