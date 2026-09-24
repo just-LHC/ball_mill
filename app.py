@@ -149,7 +149,7 @@ def render_live_subsystem_cards(selected_mill):
                 elif health > 50: st.warning(f"Health: {health}%")
                 else: st.error(f"Health: {health}%")
                 
-                # Mill 6 Main Control (16 Sensors)
+                # Mill 6 Main Control
                 if selected_mill == "Mill 6" and eq == "Mill Main Control":
                     st.markdown("**🔹 OCP Company**")
                     for idx in range(1, 11):
@@ -162,7 +162,7 @@ def render_live_subsystem_cards(selected_mill):
                     for idx in range(1, 3):
                         st.metric(f"HLC Mtr Temp #{idx}", f"{latest.get(f'hlc_mtr_tmp_{idx}', 62.0)} °C")
 
-                # Mill 5 Main Control (31 Sensors)
+                # Mill 5 Main Control
                 elif selected_mill == "Mill 5" and eq == "Mill Main Control":
                     st.markdown("**🔹 OCP Company**")
                     for idx in range(1, 11):
@@ -177,28 +177,26 @@ def render_live_subsystem_cards(selected_mill):
                     st.metric("HLC Mtr Temp #1", f"{latest.get('m5_hlc_mtr_tmp_1', 64.5)} °C")
                     st.metric("HLC Mtr Cur #1", f"{latest.get('m5_hlc_mtr_cur_1', 185.0)} A")
 
-                # Mill 4 Main Control (11 Sensors)
+                # Mill 4 Main Control
                 elif selected_mill == "Mill 4" and eq == "Mill Main Control":
-                    st.markdown("**⚙️ Gearbox Sensors (5 Channels)**")
+                    st.markdown("**⚙️ Gearbox Sensors**")
                     for idx in range(1, 3):
                         st.metric(f"GB Vibration #{idx}", f"{latest.get(f'm4_gb_vib_{idx}', 2.5)} mm/s")
                     for idx in range(1, 4):
                         st.metric(f"GB Temperature #{idx}", f"{latest.get(f'm4_gb_tmp_{idx}', 61.0)} °C")
-                    
-                    st.markdown("**⚡ Motor Sensors (6 Channels)**")
+                    st.markdown("**⚡ Motor Sensors**")
                     for idx in range(1, 6):
                         st.metric(f"Motor Temp #{idx}", f"{latest.get(f'm4_mtr_tmp_{idx}', 63.0)} °C")
                     st.metric("Motor Current #1", f"{latest.get('m4_mtr_cur_1', 160.0)} A")
 
-                # Mill 1 (White Cement) Main Control (6 Sensors)
+                # Mill 1 Main Control
                 elif selected_mill == "Mill 1 (White Cement)" and eq == "Mill Main Control":
-                    st.markdown("**⚙️ Gearbox Sensors (5 Channels)**")
+                    st.markdown("**⚙️ Gearbox Sensors**")
                     for idx in range(1, 3):
                         st.metric(f"GB Vibration #{idx}", f"{latest.get(f'm1_gb_vib_{idx}', 2.3)} mm/s")
                     for idx in range(1, 4):
                         st.metric(f"GB Temperature #{idx}", f"{latest.get(f'm1_gb_tmp_{idx}', 59.0)} °C")
-                    
-                    st.markdown("**⚡ Motor Sensors (1 Channel)**")
+                    st.markdown("**⚡ Motor Sensors**")
                     st.metric("Motor Current #1", f"{latest.get('m1_mtr_cur_1', 140.0)} A")
 
                 # Mill 6 Dynamic Separator
@@ -243,7 +241,7 @@ def render_live_subsystem_cards(selected_mill):
                     st.metric("Bearing Temp", f"{latest.get('temperature_c', 55.0)} °C")
 
 # -------------------------------------------------------------------
-# DRILL-DOWN: ALL SUBSYSTEM MULTI-GRAPH CHARTS
+# DRILL-DOWN: INDIVIDUAL GRAPHS PER ACTIVE SENSOR
 # -------------------------------------------------------------------
 @st.fragment(run_every="3s" if streaming_active else None)
 def render_live_drilldown_charts(selected_mill, selected_eq):
@@ -253,7 +251,7 @@ def render_live_drilldown_charts(selected_mill, selected_eq):
     if not eq_data.empty:
         st.markdown(f"### 📊 Live Sensor Signals — {selected_mill} ({selected_eq})")
         
-        # 1. MILL 4 MAIN CONTROL (11 GRAPHS: 5 Gearbox + 6 Motor)
+        # 1. MILL 4 MAIN CONTROL (11 GRAPHS)
         if selected_mill == "Mill 4" and selected_eq == "Mill Main Control":
             st.markdown("#### ⚙️ Gearbox Sensors (5 Graphs)")
             c_gb1, c_gb2 = st.columns(2)
@@ -284,7 +282,7 @@ def render_live_drilldown_charts(selected_mill, selected_eq):
             fig_cur.update_layout(height=200, template="plotly_dark", title="Motor Current Sensor #1 — Tag: M4-MTR-CUR-01 (Amperes)")
             st.plotly_chart(fig_cur, width="stretch")
 
-        # 2. MILL 1 (WHITE CEMENT) MAIN CONTROL (6 GRAPHS: 5 Gearbox + 1 Motor)
+        # 2. MILL 1 MAIN CONTROL (6 GRAPHS)
         elif selected_mill == "Mill 1 (White Cement)" and selected_eq == "Mill Main Control":
             st.markdown("#### ⚙️ Gearbox Sensors (5 Graphs)")
             c_m1_1, c_m1_2 = st.columns(2)
@@ -529,5 +527,6 @@ elif main_view == "Individual Mill Monitor":
         render_live_drilldown_charts(selected_mill, selected_eq)
 
     elif mill_page == "Servicing Desk & Alert Log":
+        # Servicing Desk is NOT wrapped in a 3s fragment loop so button submits synchronously
         alerts_to_display = fetch_all_alerts() or shared_engine.alerts_log
         render_servicing_desk(selected_mill, alerts_to_display)
