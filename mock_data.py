@@ -6,7 +6,6 @@ import threading
 import streamlit as st
 from ml_engine import analyze_telemetry_diagnostics
 
-# Updated Mill Hierarchy & Specialized Configurations
 PLANT_MILLS = ["Mill 1 (White Cement)", "Mill 4", "Mill 5", "Mill 6"]
 
 MILL_EQUIPMENT_MAP = {
@@ -29,39 +28,33 @@ MILL_EQUIPMENT_MAP = {
     ]
 }
 
-MILL_SENSOR_PROFILES = {
+# Sensor channel definitions per subsystem
+SENSOR_CHANNELS = {
     "Mill 6": {
-        "Dynamic Separator": {"vibration_sensors": 2, "temperature_sensors": 2, "notes": "2 Vibration & 2 Temperature sensors"},
-        "Separator Filter Fan": {"vibration_sensors": 2, "temperature_sensors": 2, "notes": "2 Vibration & 2 Temperature sensors"},
-        "Mill Main Control": {
-            "gearbox_ocp_vib": 10, "gearbox_hlc_vib": 2, "gearbox_temp": 12,
-            "motor_hlc_vib": 2, "motor_temp": 2,
-            "vibration_sensors": 14, "temperature_sensors": 14,
-            "notes": "Gearbox: 10 OCP Vib, 2 HLC Vib, 12 Temp | Motor: 2 HLC Vib, 2 Temp"
-        },
-        "Main Filter Fan": {"vibration_sensors": 2, "temperature_sensors": 0, "notes": "2 Vibration sensors"}
-    },
-    "Mill 5": {
-        "Mill Main Control": {
-            "gearbox_ocp_vib": 10, "gearbox_ocp_temp": 10,
-            "vibration_sensors": 10, "temperature_sensors": 10,
-            "notes": "Gearbox: 10 OCP Vibration & 10 OCP Temperature sensors"
-        },
         "Dynamic Separator": {
-            "oil_pressure_sensors": 1, "motor_current_sensors": 1, "temperature_sensors": 1,
-            "vibration_sensors": 0,
-            "notes": "1 Oil Pressure, Motor Current & 1 Temperature sensor"
+            "vibration": ["Vib 1 (Drive End)", "Vib 2 (Non-Drive End)"],
+            "temperature": ["Temp 1 (Upper Bearing)", "Temp 2 (Lower Bearing)"]
         },
         "Separator Filter Fan": {
-            "vibration_sensors": 2, "motor_current_sensors": 1, "temperature_sensors": 2,
-            "notes": "2 Vibration, Motor Current & 2 Temperature sensors"
+            "vibration": ["Vib 1 (Fan Bearing)", "Vib 2 (Motor Bearing)"],
+            "temperature": ["Temp 1 (Housing)", "Temp 2 (Motor Winding)"]
+        },
+        "Main Filter Fan": {
+            "vibration": ["Vib 1 (Inlet)", "Vib 2 (Outlet)"],
+            "temperature": []
         }
     },
-    "Mill 4": {
-        "Mill Main Control": {"vibration_sensors": 6, "temperature_sensors": 6, "notes": "6 Vibration & 6 Temperature sensors (Gearbox & Motor)"}
-    },
-    "Mill 1 (White Cement)": {
-        "Mill Main Control": {"vibration_sensors": 6, "temperature_sensors": 6, "notes": "6 Vibration & 6 Temperature sensors (Gearbox & Motor)"}
+    "Mill 5": {
+        "Dynamic Separator": {
+            "oil_pressure": ["Oil Pressure (Bar)"],
+            "temperature": ["Bearing Temp (°C)"],
+            "motor_current": ["Motor Current (A)"]
+        },
+        "Separator Filter Fan": {
+            "vibration": ["Vib 1 (Fan)", "Vib 2 (Motor)"],
+            "temperature": ["Temp 1 (Inlet)", "Temp 2 (Outlet)"],
+            "motor_current": ["Motor Current (A)"]
+        }
     }
 }
 
@@ -80,18 +73,32 @@ class PlantDataEngine:
             for eq in eq_list:
                 for i in range(num_records):
                     timestamp = now - timedelta(minutes=(num_records - i))
-                    vib_base = 4.0 if eq == "Mill Main Control" else 2.5
-                    temp_base = 62.0 if eq == "Dynamic Separator" else 55.0
                     
-                    vib = np.random.normal(vib_base, 0.3)
-                    temp = np.random.normal(temp_base, 1.0)
+                    # Mill 6 Dynamic Separator Channels
+                    vib1 = np.random.normal(2.4, 0.3)
+                    vib2 = np.random.normal(2.6, 0.3)
+                    temp1 = np.random.normal(58.0, 1.0)
+                    temp2 = np.random.normal(60.0, 1.0)
                     
+                    # Mill 5 Dynamic Separator Channels
+                    oil_press = np.random.normal(4.2, 0.15)
+                    m5_temp = np.random.normal(61.5, 0.8)
+                    m5_curr = np.random.normal(145.0, 3.0)
+
+                    # General fallback values
+                    vib_gen = np.random.normal(2.5, 0.3)
+                    temp_gen = np.random.normal(55.0, 1.0)
+
                     data.append({
                         "timestamp": timestamp,
                         "mill": mill,
                         "equipment": eq,
-                        "vibration_mm_s": round(max(0, vib), 2),
-                        "temperature_c": round(temp, 1)
+                        "vibration_mm_s": round(max(0, vib1), 2),
+                        "vibration_2_mm_s": round(max(0, vib2), 2),
+                        "temperature_c": round(temp1, 1),
+                        "temperature_2_c": round(temp2, 1),
+                        "oil_pressure_bar": round(max(0, oil_press), 2),
+                        "motor_current_a": round(max(0, m5_curr), 1)
                     })
         return pd.DataFrame(data)
 
@@ -103,39 +110,40 @@ class PlantDataEngine:
         trigger_critical = (np.random.rand() < 0.002) if not trigger_warning else False
         
         target_mill = np.random.choice(PLANT_MILLS) if (trigger_warning or trigger_critical) else None
-        
-        if target_mill and target_mill in MILL_EQUIPMENT_MAP:
-            target_eq = np.random.choice(MILL_EQUIPMENT_MAP[target_mill])
-        else:
-            target_eq = None
+        target_eq = np.random.choice(MILL_EQUIPMENT_MAP[target_mill]) if target_mill and target_mill in MILL_EQUIPMENT_MAP else None
 
         for mill, eq_list in MILL_EQUIPMENT_MAP.items():
             for eq in eq_list:
-                vib_base = 4.0 if eq == "Mill Main Control" else 2.5
-                temp_base = 62.0 if eq == "Dynamic Separator" else 55.0
+                is_target = (trigger_warning or trigger_critical) and mill == target_mill and eq == target_eq
                 
-                if trigger_critical and mill == target_mill and eq == target_eq:
-                    vib = np.random.uniform(7.2, 8.8)
-                    temp = np.random.uniform(91.0, 96.0)
-                elif trigger_warning and mill == target_mill and eq == target_eq:
-                    vib = np.random.uniform(4.8, 6.5)
-                    temp = np.random.uniform(76.0, 88.0)
-                else:
-                    vib = np.random.normal(vib_base, 0.4)
-                    temp = np.random.normal(temp_base, 1.2)
+                # Mill 6 Separator Channel Base Values
+                v1_base, v2_base = (7.8, 8.1) if is_target and trigger_critical else ((5.2, 5.5) if is_target else (2.4, 2.6))
+                t1_base, t2_base = (93.0, 95.0) if is_target and trigger_critical else ((78.0, 81.0) if is_target else (58.0, 60.0))
                 
+                vib1 = np.random.normal(v1_base, 0.3)
+                vib2 = np.random.normal(v2_base, 0.3)
+                temp1 = np.random.normal(t1_base, 1.0)
+                temp2 = np.random.normal(t2_base, 1.0)
+
+                # Mill 5 Separator Channel Base Values
+                oil_press = np.random.normal(2.1, 0.1) if is_target and trigger_critical else np.random.normal(4.2, 0.15)
+                m5_curr = np.random.normal(210.0, 5.0) if is_target and trigger_critical else np.random.normal(145.0, 3.0)
+
                 row = {
                     "timestamp": now,
                     "mill": mill,
                     "equipment": eq,
-                    "vibration_mm_s": round(max(0, vib), 2),
-                    "temperature_c": round(temp, 1)
+                    "vibration_mm_s": round(max(0, vib1), 2),
+                    "vibration_2_mm_s": round(max(0, vib2), 2),
+                    "temperature_c": round(temp1, 1),
+                    "temperature_2_c": round(temp2, 1),
+                    "oil_pressure_bar": round(max(0, oil_press), 2),
+                    "motor_current_a": round(max(0, m5_curr), 1)
                 }
                 new_rows.append(row)
                 self._evaluate_and_log_alert(row)
                 
         new_df = pd.DataFrame(new_rows)
-        
         with self._lock:
             self.df = pd.concat([self.df, new_df], ignore_index=True).tail(3000)
 
@@ -143,8 +151,8 @@ class PlantDataEngine:
         mill = latest_reading["mill"]
         eq = latest_reading["equipment"]
         timestamp = latest_reading["timestamp"]
-        vib = latest_reading["vibration_mm_s"]
-        temp = latest_reading["temperature_c"]
+        vib = max(latest_reading["vibration_mm_s"], latest_reading["vibration_2_mm_s"])
+        temp = max(latest_reading["temperature_c"], latest_reading["temperature_2_c"])
         
         diag = analyze_telemetry_diagnostics(mill, eq, vib, temp)
         
@@ -172,14 +180,7 @@ class PlantDataEngine:
 
             try:
                 from db_engine import log_alert_to_db
-                log_alert_to_db(
-                    mill=mill,
-                    equipment=eq,
-                    severity=diag["severity"],
-                    issue=diag["diagnostic_comments"],
-                    vib=vib,
-                    temp=temp
-                )
+                log_alert_to_db(mill=mill, equipment=eq, severity=diag["severity"], issue=diag["diagnostic_comments"], vib=vib, temp=temp)
             except Exception:
                 pass
 
@@ -191,7 +192,7 @@ class PlantDataEngine:
                     try:
                         self.tick_live_telemetry()
                     except Exception as e:
-                        print(f"[BACKGROUND TELEMETRY WORKER ERROR] {e}")
+                        print(f"[BACKGROUND WORKER ERROR] {e}")
                     time.sleep(3)
 
             thread = threading.Thread(target=_loop, daemon=True)
