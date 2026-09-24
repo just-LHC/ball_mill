@@ -235,7 +235,7 @@ def render_servicing_desk(selected_mill: str, alerts_to_display: list):
         alert_options = {f"Alert #{a['id']} - {a['equipment']} ({a['timestamp']})": a['id'] for a in active_mill_alerts}
         selected_alert_str = st.selectbox("Select Alert to Resolve:", list(alert_options.keys()))
         selected_id = alert_options[selected_alert_str]
-        selected_rec = next(a for a in mill_alerts if a["id"] == selected_id)
+        selected_rec = next(a for a in mill_alerts if str(a["id"]) == str(selected_id))
 
         is_admin = (st.session_state.get("user_role") == "Reliability Engineer")
 
@@ -269,22 +269,31 @@ def render_servicing_desk(selected_mill: str, alerts_to_display: list):
                         f"Operator Note by {operator_name} at {serviced_time}: {action_taken} (Pending Sign-off)"
                     )
                     
-                    # 1. Update status in Supabase PostgreSQL
+                    # 1. Direct PostgreSQL Update targeting both int and str ID representations
                     try:
                         engine = get_db_engine()
-                        update_sql = "UPDATE plc_alerts SET status = :status, operator_notes = :notes WHERE id = :id;"
+                        update_sql = "UPDATE plc_alerts SET status = :status, operator_notes = :notes WHERE id = :id OR id = :str_id;"
                         with engine.begin() as conn:
-                            conn.execute(text(update_sql), {"status": new_status, "notes": notes, "id": selected_id})
+                            conn.execute(
+                                text(update_sql), 
+                                {
+                                    "status": new_status, 
+                                    "notes": notes, 
+                                    "id": int(selected_id) if str(selected_id).isdigit() else 0,
+                                    "str_id": str(selected_id)
+                                }
+                            )
                     except Exception as e:
-                        print(f"Error updating DB alert: {e}")
+                        print(f"[DB UPDATE ERROR] {e}")
 
                     # 2. Synchronize in-memory shared engine alerts log
                     for in_mem_alert in shared_engine.alerts_log:
-                        if in_mem_alert.get("id") == selected_id:
+                        if str(in_mem_alert.get("id")) == str(selected_id):
                             in_mem_alert["status"] = new_status
                             in_mem_alert["operator_notes"] = notes
                             break
 
+                    # 3. Retrain ML model if serviced by Reliability Engineer
                     if is_admin:
                         was_true_failure = True if "Genuine Issue" in alert_feedback_type else False
                         vib_snap = float(selected_rec.get("vibration_snapshot", 5.0))
@@ -300,6 +309,7 @@ def render_servicing_desk(selected_mill: str, alerts_to_display: list):
                     else:
                         st.info(f"ℹ️ Maintenance note logged for Alert #{selected_id}. Awaiting engineer review.")
                     
+                    st.cache_data.clear()
                     st.rerun()
                 else:
                     st.error("⚠️ Please enter technician name and action taken before submitting.")
