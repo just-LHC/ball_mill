@@ -6,7 +6,6 @@ from ml_engine import retrain_specific_equipment_model
 from db_engine import fetch_all_alerts, get_db_engine
 from mock_data import get_shared_plant_engine
 
-# User Authentication Database
 USER_CREDENTIALS = {
     "op_cotedivoire": {"password": "cement_operator", "role": "Operator", "name": "Control Room Operator"},
     "admin_pdm": {"password": "lafarge_admin", "role": "Reliability Engineer", "name": "Lead Reliability Engineer"}
@@ -154,11 +153,9 @@ def render_servicing_desk(selected_mill: str, alerts_to_display: list):
 
     # 1. Fetch live alerts directly from central Supabase PostgreSQL
     all_db_alerts = fetch_all_alerts()
-    
     if not all_db_alerts:
         all_db_alerts = shared_engine.alerts_log
 
-    # Normalize mill matching string
     mill_alerts = [
         a for a in all_db_alerts 
         if str(a.get("mill", "")).strip().lower() == selected_mill.strip().lower() 
@@ -269,31 +266,30 @@ def render_servicing_desk(selected_mill: str, alerts_to_display: list):
                         f"Operator Note by {operator_name} at {serviced_time}: {action_taken} (Pending Sign-off)"
                     )
                     
-                    # 1. Direct PostgreSQL Update targeting both int and str ID representations
+                    # 1. Execute SQL update on Supabase PostgreSQL
                     try:
                         engine = get_db_engine()
-                        update_sql = "UPDATE plc_alerts SET status = :status, operator_notes = :notes WHERE id = :id OR id = :str_id;"
+                        update_sql = "UPDATE plc_alerts SET status = :status, operator_notes = :notes WHERE CAST(id AS TEXT) = :str_id;"
                         with engine.begin() as conn:
                             conn.execute(
                                 text(update_sql), 
                                 {
                                     "status": new_status, 
                                     "notes": notes, 
-                                    "id": int(selected_id) if str(selected_id).isdigit() else 0,
                                     "str_id": str(selected_id)
                                 }
                             )
                     except Exception as e:
                         print(f"[DB UPDATE ERROR] {e}")
 
-                    # 2. Synchronize in-memory shared engine alerts log
+                    # 2. Force immediate update in local thread memory
                     for in_mem_alert in shared_engine.alerts_log:
                         if str(in_mem_alert.get("id")) == str(selected_id):
                             in_mem_alert["status"] = new_status
                             in_mem_alert["operator_notes"] = notes
                             break
 
-                    # 3. Retrain ML model if serviced by Reliability Engineer
+                    # 3. Retrain model if admin
                     if is_admin:
                         was_true_failure = True if "Genuine Issue" in alert_feedback_type else False
                         vib_snap = float(selected_rec.get("vibration_snapshot", 5.0))

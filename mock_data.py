@@ -6,14 +6,14 @@ import threading
 import streamlit as st
 from ml_engine import analyze_telemetry_diagnostics
 
-# Attach Streamlit ScriptRunContext to background worker threads
 try:
-    from streamlit.runtime.scriptrunner import add_script_run_context
+    from streamlit.runtime.scriptrunner import add_script_run_context, get_script_run_ctx
 except ImportError:
     try:
-        from streamlit.scriptrunner import add_script_run_context
+        from streamlit.scriptrunner import add_script_run_context, get_script_run_ctx
     except ImportError:
         add_script_run_context = None
+        get_script_run_ctx = None
 
 PLANT_MILLS = ["Mill 1 (White Cement)", "Mill 4", "Mill 5", "Mill 6"]
 
@@ -231,7 +231,7 @@ class PlantDataEngine:
                     time.sleep(3)
 
             thread = threading.Thread(target=_loop, daemon=True)
-            if add_script_run_context:
+            if add_script_run_context and get_script_run_ctx and get_script_run_ctx() is not None:
                 try:
                     add_script_run_context(thread)
                 except Exception:
