@@ -6,6 +6,7 @@ from ml_engine import retrain_specific_equipment_model
 from db_engine import fetch_all_alerts, get_db_engine
 from mock_data import get_shared_plant_engine
 
+# User Authentication Database
 USER_CREDENTIALS = {
     "op_cotedivoire": {"password": "cement_operator", "role": "Operator", "name": "Control Room Operator"},
     "admin_pdm": {"password": "lafarge_admin", "role": "Reliability Engineer", "name": "Lead Reliability Engineer"}
@@ -156,6 +157,16 @@ def render_servicing_desk(selected_mill: str, alerts_to_display: list):
     if not all_db_alerts:
         all_db_alerts = shared_engine.alerts_log
 
+    # Apply any session_state servicing overrides immediately
+    if "serviced_alert_overrides" not in st.session_state:
+        st.session_state["serviced_alert_overrides"] = {}
+
+    for alert in all_db_alerts:
+        a_id = str(alert.get("id"))
+        if a_id in st.session_state["serviced_alert_overrides"]:
+            alert["status"] = st.session_state["serviced_alert_overrides"][a_id]["status"]
+            alert["operator_notes"] = st.session_state["serviced_alert_overrides"][a_id]["notes"]
+
     mill_alerts = [
         a for a in all_db_alerts 
         if str(a.get("mill", "")).strip().lower() == selected_mill.strip().lower() 
@@ -266,46 +277,47 @@ def render_servicing_desk(selected_mill: str, alerts_to_display: list):
                         f"Operator Note by {operator_name} at {serviced_time}: {action_taken} (Pending Sign-off)"
                     )
                     
-                    # 1. Execute SQL update on Supabase PostgreSQL
-                    try:
-                        engine = get_db_engine()
-                        update_sql = "UPDATE plc_alerts SET status = :status, operator_notes = :notes WHERE CAST(id AS TEXT) = :str_id;"
-                        with engine.begin() as conn:
-                            conn.execute(
-                                text(update_sql), 
-                                {
-                                    "status": new_status, 
-                                    "notes": notes, 
-                                    "str_id": str(selected_id)
-                                }
-                            )
-                    except Exception as e:
-                        print(f"[DB UPDATE ERROR] {e}")
+                    # 1. Update session state overrides for instant UI reflection
+                    st.session_state["serviced_alert_overrides"][str(selected_id)] = {
+                        "status": new_status,
+                        "notes": notes
+                    }
 
-                    # 2. Force immediate update in local thread memory
+                    # 2. Update local shared memory in mock_data
                     for in_mem_alert in shared_engine.alerts_log:
                         if str(in_mem_alert.get("id")) == str(selected_id):
                             in_mem_alert["status"] = new_status
                             in_mem_alert["operator_notes"] = notes
                             break
 
-                    # 3. Retrain model if admin
+                    # 3. Direct PostgreSQL Update with explicit commit
+                    try:
+                        engine = get_db_engine()
+                        update_sql = text("UPDATE plc_alerts SET status = :status, operator_notes = :notes WHERE CAST(id AS TEXT) = :str_id;")
+                        with engine.connect() as conn:
+                            conn.execute(update_sql, {"status": new_status, "notes": notes, "str_id": str(selected_id)})
+                            conn.commit()
+                    except Exception as e:
+                        print(f"[DB SERVICING UPDATE ERROR] {e}")
+
+                    # 4. Retrain ML model if closed by Reliability Engineer
                     if is_admin:
                         was_true_failure = True if "Genuine Issue" in alert_feedback_type else False
                         vib_snap = float(selected_rec.get("vibration_snapshot", 5.0))
                         temp_snap = float(selected_rec.get("temperature_snapshot", 70.0))
                         
-                        retrain_specific_equipment_model(
-                            mill=selected_rec.get("mill", selected_mill),
-                            equipment=selected_rec.get("equipment", ""),
-                            feedback_samples=[[vib_snap, temp_snap]],
-                            was_true_failure=was_true_failure
-                        )
-                        st.success(f"✅ Alert #{selected_id} closed in database & memory log, ML model retrained!")
-                    else:
-                        st.info(f"ℹ️ Maintenance note logged for Alert #{selected_id}. Awaiting engineer review.")
-                    
+                        try:
+                            retrain_specific_equipment_model(
+                                mill=selected_rec.get("mill", selected_mill),
+                                equipment=selected_rec.get("equipment", ""),
+                                feedback_samples=[[vib_snap, temp_snap]],
+                                was_true_failure=was_true_failure
+                            )
+                        except Exception as e:
+                            print(f"[ML RETRAIN ERROR] {e}")
+
                     st.cache_data.clear()
+                    st.success(f"✅ Alert #{selected_id} successfully updated to '{new_status}'!")
                     st.rerun()
                 else:
                     st.error("⚠️ Please enter technician name and action taken before submitting.")
