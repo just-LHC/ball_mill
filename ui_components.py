@@ -112,25 +112,18 @@ def render_global_header():
             "vib-611-sep01-r": "Dynamic Separator",
             "tit-611-sep01-b1": "Dynamic Separator",
             "separator": "Dynamic Separator",
-            
-            "611-pmp-e5e8": "E5 & E8 Cement Pumps",
-            "vib-611-pmp05-a": "E5 & E8 Cement Pumps",
-            "pump": "E5 & E8 Cement Pumps",
-            
             "611-fn-sep": "Separator Filter Fan",
             "vib-611-fns-r": "Separator Filter Fan",
-            
             "611-ml-drv": "Mill Main Control",
             "vib-611-mld-gb": "Mill Main Control",
             "drive": "Mill Main Control",
-            
             "611-fn-main": "Main Filter Fan",
             "vib-611-fnm-de": "Main Filter Fan"
         }
 
         should_rerun = False
 
-        for mill in ["Mill 1", "Mill 2", "Mill 4", "Mill 5", "Mill 6"]:
+        for mill in ["Mill 1 (White Cement)", "Mill 4", "Mill 5", "Mill 6"]:
             if mill.lower() in current_search:
                 st.session_state["nav_main_view"] = "Individual Mill Monitor"
                 st.session_state["nav_selected_mill"] = mill
@@ -154,17 +147,18 @@ def render_global_header():
     return search_query
 
 def render_servicing_desk(selected_mill: str, alerts_to_display: list):
-    """Renders the RBAC-protected servicing desk form and export log directly connected to Supabase PostgreSQL."""
+    """Renders the RBAC-protected servicing desk form and updates both PostgreSQL DB and local memory."""
     st.subheader(f"🛠️ {selected_mill} - Servicing Desk & Shift Handover")
     
+    shared_engine = get_shared_plant_engine()
+
     # 1. Fetch live alerts directly from central Supabase PostgreSQL
     all_db_alerts = fetch_all_alerts()
     
-    # Fallback to mock data only if database is completely unpopulated
     if not all_db_alerts:
-        shared_engine = get_shared_plant_engine()
         all_db_alerts = shared_engine.alerts_log
 
+    # Normalize mill matching string
     mill_alerts = [
         a for a in all_db_alerts 
         if str(a.get("mill", "")).strip().lower() == selected_mill.strip().lower() 
@@ -172,7 +166,7 @@ def render_servicing_desk(selected_mill: str, alerts_to_display: list):
     ]
     
     if not mill_alerts:
-        st.info(f"No active or historical alerts recorded in database for {selected_mill}.")
+        st.info(f"No active or historical alerts recorded for {selected_mill}.")
         return
 
     m_df = pd.DataFrame(mill_alerts)
@@ -275,7 +269,7 @@ def render_servicing_desk(selected_mill: str, alerts_to_display: list):
                         f"Operator Note by {operator_name} at {serviced_time}: {action_taken} (Pending Sign-off)"
                     )
                     
-                    # Update status directly in Supabase PostgreSQL
+                    # 1. Update status in Supabase PostgreSQL
                     try:
                         engine = get_db_engine()
                         update_sql = "UPDATE plc_alerts SET status = :status, operator_notes = :notes WHERE id = :id;"
@@ -283,6 +277,13 @@ def render_servicing_desk(selected_mill: str, alerts_to_display: list):
                             conn.execute(text(update_sql), {"status": new_status, "notes": notes, "id": selected_id})
                     except Exception as e:
                         print(f"Error updating DB alert: {e}")
+
+                    # 2. Synchronize in-memory shared engine alerts log
+                    for in_mem_alert in shared_engine.alerts_log:
+                        if in_mem_alert.get("id") == selected_id:
+                            in_mem_alert["status"] = new_status
+                            in_mem_alert["operator_notes"] = notes
+                            break
 
                     if is_admin:
                         was_true_failure = True if "Genuine Issue" in alert_feedback_type else False
@@ -295,9 +296,10 @@ def render_servicing_desk(selected_mill: str, alerts_to_display: list):
                             feedback_samples=[[vib_snap, temp_snap]],
                             was_true_failure=was_true_failure
                         )
-                        st.success(f"✅ Alert #{selected_id} closed in database and ML model retrained!")
+                        st.success(f"✅ Alert #{selected_id} closed in database & memory log, ML model retrained!")
                     else:
                         st.info(f"ℹ️ Maintenance note logged for Alert #{selected_id}. Awaiting engineer review.")
+                    
                     st.rerun()
                 else:
                     st.error("⚠️ Please enter technician name and action taken before submitting.")
