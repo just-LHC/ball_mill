@@ -7,7 +7,7 @@ from mock_data import (
     simple_health_score, 
     PLANT_MILLS,
     MILL_EQUIPMENT_MAP,
-    MILL_SENSOR_CONFIG
+    MILL_SENSOR_PROFILES
 )
 from db_engine import fetch_all_alerts
 from ui_components import (
@@ -16,7 +16,7 @@ from ui_components import (
     render_servicing_desk
 )
 
-st.set_page_config(page_title="LafargeHolcim Ivory Coast - Multi-Sensor PdM Suite", layout="wide")
+st.set_page_config(page_title="LafargeHolcim Ivory Coast - Industrial PdM Suite", layout="wide")
 
 # Session State Initialization
 if "nav_main_view" not in st.session_state:
@@ -28,13 +28,8 @@ if "nav_mill_page" not in st.session_state:
 if "nav_selected_eq" not in st.session_state:
     st.session_state["nav_selected_eq"] = "Dynamic Separator"
 
-# Render Global Header & Process Search Navigation FIRST
 search_query = render_global_header()
-
-# Render Sidebar Login & Role Management
 render_sidebar_auth()
-
-# Connect to shared multi-device data engine singleton
 shared_engine = get_shared_plant_engine()
 
 def get_iso_10816_status(vib):
@@ -44,10 +39,10 @@ def get_iso_10816_status(vib):
     else: return "Zone D (Critical / Trip Limit Breach)", "#E74C3C"
 
 EQUIPMENT_PROFILES = {
-    "Dynamic Separator": {"tag": "611-SEP-01", "description": "High-efficiency air separator.", "image_url": "https://images.unsplash.com/photo-1581092160607-ee22621dd758?auto=format&fit=crop&w=800&q=80"},
-    "Separator Filter Fan": {"tag": "611-FN-SEP", "description": "Process exhaust fan.", "image_url": "https://images.unsplash.com/photo-1504307651254-35680f356dfd?auto=format&fit=crop&w=800&q=80"},
-    "Mill Main Control": {"tag": "611-ML-DRV", "description": "Ball mill drive assembly.", "image_url": "https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?auto=format&fit=crop&w=800&q=80"},
-    "Main Filter Fan": {"tag": "611-FN-MAIN", "description": "Primary plant de-dusting fan.", "image_url": "https://images.unsplash.com/photo-1581092580497-e0d23cbdf1dc?auto=format&fit=crop&w=800&q=80"}
+    "Dynamic Separator": {"tag": "611-SEP-01", "vib_tag": "VIB-611-SEP01-R", "temp_tag": "TIT-611-SEP01-B1", "description": "High-efficiency air separator.", "image_url": "https://images.unsplash.com/photo-1581092160607-ee22621dd758?auto=format&fit=crop&w=800&q=80"},
+    "Separator Filter Fan": {"tag": "611-FN-SEP", "vib_tag": "VIB-611-FNS-R", "temp_tag": "TIT-611-FNS-B", "description": "Process exhaust fan.", "image_url": "https://images.unsplash.com/photo-1504307651254-35680f356dfd?auto=format&fit=crop&w=800&q=80"},
+    "Mill Main Control": {"tag": "611-ML-DRV", "vib_tag": "VIB-611-MLD-GB", "temp_tag": "TIT-611-MLD-TRN", "description": "Ball mill drive assembly.", "image_url": "https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?auto=format&fit=crop&w=800&q=80"},
+    "Main Filter Fan": {"tag": "611-FN-MAIN", "vib_tag": "VIB-611-FNM-DE", "temp_tag": "TIT-611-FNM-WNG", "description": "Primary plant de-dusting fan.", "image_url": "https://images.unsplash.com/photo-1581092580497-e0d23cbdf1dc?auto=format&fit=crop&w=800&q=80"}
 }
 
 st.sidebar.title("🏭 Plant Navigation")
@@ -72,7 +67,7 @@ if main_view == "Individual Mill Monitor":
 streaming_active = st.sidebar.toggle("Live Telemetry Stream", value=True)
 
 # -------------------------------------------------------------------
-# ISOLATED FRAGMENT: GENERAL PLANT OVERVIEW
+# GENERAL PLANT OVERVIEW
 # -------------------------------------------------------------------
 @st.fragment(run_every="3s" if streaming_active else None)
 def render_live_overview_matrix(search_query):
@@ -116,77 +111,64 @@ def render_live_overview_matrix(search_query):
             st.write(f"**Pending Alerts:** {len(mill_alerts)}")
 
     active_alerts = [a for a in alerts_to_display if "ACTIVE" in str(a.get("status", "")).upper()]
+    crit_alerts = [a for a in active_alerts if "CRITICAL" in str(a.get("severity", "")).upper() or "CRITICAL" in str(a.get("status", "")).upper()]
+    if crit_alerts:
+        st.markdown("---")
+        st.markdown("##### 🚨 Critical ML Predictive Action Items:")
+        for c in crit_alerts[:3]:
+            st.error(f"**[{c.get('mill', 'N/A')} — {c.get('equipment', 'N/A')}]** *{c.get('issue', 'Anomaly detected')}* — **Action:** Check P&ID tags & service.")
+                
     st.markdown("---")
     st.subheader("🚨 Active Plant Alert Log & Recommendations")
     if not active_alerts:
         st.success("🎉 All mill systems operating within normal ISO bounds.")
     else:
-        formatted_rows = [{
-            "Alert ID": f"#{a.get('id', 'N/A')}",
-            "Timestamp": a.get("timestamp", "N/A"),
-            "Mill": a.get("mill", "N/A"),
-            "Equipment Subsystem": a.get("equipment", "N/A"),
-            "Severity": a.get("severity", "N/A"),
-            "Root Cause Diagnostic": a.get("issue", "N/A"),
-            "Servicing Status": a.get("status", "N/A")
-        } for a in active_alerts]
-        st.dataframe(pd.DataFrame(formatted_rows), width="stretch", hide_index=True)
+        formatted_rows = []
+        for a in active_alerts:
+            comments = a.get("individual_comments", [])
+            rec_action = comments[-1] if comments and isinstance(comments, list) else "Inspect machine subsystem and verify RTD/vibration sensor seating."
+            formatted_rows.append({
+                "Alert ID": f"#{a.get('id', 'N/A')}",
+                "Timestamp": a.get("timestamp", "N/A"),
+                "Mill": a.get("mill", "N/A"),
+                "Equipment Subsystem": a.get("equipment", "N/A"),
+                "Severity": a.get("severity", "N/A"),
+                "Root Cause Diagnostic": a.get("issue", "N/A"),
+                "Recommended Action": rec_action,
+                "Servicing Status": a.get("status", "N/A")
+            })
+        alerts_df = pd.DataFrame(formatted_rows)
+        st.dataframe(alerts_df, width="stretch", hide_index=True)
 
 # -------------------------------------------------------------------
-# ISOLATED FRAGMENT: SUBSYSTEM OVERVIEW (SAFE MULTI-SENSOR FALLBACK)
+# SUBSYSTEM OVERVIEW
 # -------------------------------------------------------------------
 @st.fragment(run_every="3s" if streaming_active else None)
 def render_live_subsystem_cards(selected_mill):
     mill_df = shared_engine.df[shared_engine.df["mill"] == selected_mill]
     available_eq = MILL_EQUIPMENT_MAP.get(selected_mill, [])
     
-    st.subheader(f"⚙️ {selected_mill} - Multi-Sensor Subsystem Overview")
+    st.subheader(f"⚙️ {selected_mill} - Subsystem Overview")
+    cols = st.columns(max(1, len(available_eq)))
     
-    for eq in available_eq:
+    for i, eq in enumerate(available_eq):
         eq_sub_df = mill_df[mill_df["equipment"] == eq]
+        sensor_info = MILL_SENSOR_PROFILES.get(selected_mill, {}).get(eq, {})
+        
         if not eq_sub_df.empty:
             latest = eq_sub_df.iloc[-1]
-            
-            # Safe extractions with fallback for initial telemetry buffer
-            max_v = latest.get("max_vibration", latest.get("vibration_mm_s", 0.0))
-            max_t = latest.get("max_temperature", latest.get("temperature_c", 0.0))
-            health = simple_health_score(max_v, max_t)
-            
-            vib_map = latest.get("vib_sensors", {})
-            temp_map = latest.get("temp_sensors", {})
-            
-            with st.expander(f"📌 {eq} — Health: {health}% | Max Vib: {max_v} mm/s | Max Temp: {max_t} °C", expanded=True):
-                col_info, col_vib, col_temp = st.columns([1.5, 2, 2])
-                
-                with col_info:
-                    st.markdown(f"### {eq}")
-                    if health > 80: st.success(f"Status: Normal ({health}%)")
-                    elif health > 50: st.warning(f"Status: Warning ({health}%)")
-                    else: st.error(f"Status: Critical ({health}%)")
-                    
-                    if "oil_pressure" in latest:
-                        st.metric("Oil Pressure", f"{latest['oil_pressure']} bar")
-                    if "motor_current" in latest:
-                        st.metric("Motor Current", f"{latest['motor_current']} A")
-
-                with col_vib:
-                    st.markdown(f"**Vibration Sensors ({len(vib_map)} channels):**")
-                    if vib_map:
-                        vib_df = pd.DataFrame([{"Sensor Channel": k, "Reading (mm/s)": v} for k, v in vib_map.items()])
-                        st.dataframe(vib_df, width="stretch", hide_index=True, height=180)
-                    else:
-                        st.caption("No vibration sensors installed on this unit.")
-
-                with col_temp:
-                    st.markdown(f"**Temperature Sensors ({len(temp_map)} channels):**")
-                    if temp_map:
-                        temp_df = pd.DataFrame([{"Sensor Channel": k, "Reading (°C)": v} for k, v in temp_map.items()])
-                        st.dataframe(temp_df, width="stretch", hide_index=True, height=180)
-                    else:
-                        st.caption("No temperature sensors installed on this unit.")
+            health = simple_health_score(latest["vibration_mm_s"], latest["temperature_c"])
+            with cols[i]:
+                st.markdown(f"#### {eq}")
+                st.caption(f"🔧 **Sensors:** {sensor_info.get('notes', 'Standard Setup')}")
+                if health > 80: st.success(f"Health: {health}%")
+                elif health > 50: st.warning(f"Health: {health}%")
+                else: st.error(f"Health: {health}%")
+                st.metric("Vibration RMS", f"{latest['vibration_mm_s']} mm/s")
+                st.metric("Temperature", f"{latest['temperature_c']} °C")
 
 # -------------------------------------------------------------------
-# ISOLATED FRAGMENT: DRILL-DOWN CHARTS (SAFE MULTI-SENSOR FALLBACK)
+# DRILL-DOWN CHARTS
 # -------------------------------------------------------------------
 @st.fragment(run_every="3s" if streaming_active else None)
 def render_live_drilldown_charts(selected_mill, selected_eq):
@@ -195,50 +177,27 @@ def render_live_drilldown_charts(selected_mill, selected_eq):
     
     if not eq_data.empty:
         latest = eq_data.iloc[-1]
-        max_v = latest.get("max_vibration", latest.get("vibration_mm_s", 0.0))
-        max_t = latest.get("max_temperature", latest.get("temperature_c", 0.0))
+        profile = EQUIPMENT_PROFILES.get(selected_eq, {})
+        sensor_info = MILL_SENSOR_PROFILES.get(selected_mill, {}).get(selected_eq, {})
         
-        vib_map = latest.get("vib_sensors", {})
-        temp_map = latest.get("temp_sensors", {})
-        
-        m1, m2, m3 = st.columns(3)
-        m1.metric("Subsystem Health", f"{simple_health_score(max_v, max_t)}%")
-        m2.metric("Max Vibration RMS", f"{max_v} mm/s")
-        m3.metric("Max Bearing Temp", f"{max_t} °C")
+        temp_delta = round((latest["temperature_c"] - eq_data.iloc[-2]["temperature_c"]) / 0.05, 2) if len(eq_data) > 1 else 0.0
+        iso_status, _ = get_iso_10816_status(latest["vibration_mm_s"])
 
-        # Multi-Trace Vibration Plot
-        if vib_map:
-            fig_vib = go.Figure()
-            sensor_names = list(vib_map.keys())
-            for s_name in sensor_names:
-                y_vals = [row.get("vib_sensors", {}).get(s_name, row.get("vibration_mm_s", 0.0)) for _, row in eq_data.iterrows()]
-                fig_vib.add_trace(go.Scatter(x=eq_data["timestamp"], y=y_vals, mode="lines", name=s_name))
-            
-            fig_vib.update_layout(
-                height=320, 
-                template="plotly_dark", 
-                title=f"Multi-Sensor Vibration Traces ({len(sensor_names)} Channels) — {selected_eq}",
-                margin=dict(l=20, r=20, t=35, b=20),
-                legend=dict(orientation="h", y=-0.2)
-            )
-            st.plotly_chart(fig_vib, width="stretch")
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Health Index", f"{simple_health_score(latest['vibration_mm_s'], latest['temperature_c'])}%")
+        m2.metric("Vibration RMS", f"{latest['vibration_mm_s']} mm/s")
+        m3.metric("Bearing Temp.", f"{latest['temperature_c']} °C", delta=f"{temp_delta} °C/min")
+        m4.metric("ISO 10816 State", iso_status)
 
-        # Multi-Trace Temperature Plot
-        if temp_map:
-            fig_temp = go.Figure()
-            sensor_names = list(temp_map.keys())
-            for s_name in sensor_names:
-                y_vals = [row.get("temp_sensors", {}).get(s_name, row.get("temperature_c", 0.0)) for _, row in eq_data.iterrows()]
-                fig_temp.add_trace(go.Scatter(x=eq_data["timestamp"], y=y_vals, mode="lines", name=s_name))
-            
-            fig_temp.update_layout(
-                height=320, 
-                template="plotly_dark", 
-                title=f"Multi-Sensor Thermal Traces ({len(sensor_names)} Channels) — {selected_eq}",
-                margin=dict(l=20, r=20, t=35, b=20),
-                legend=dict(orientation="h", y=-0.2)
-            )
-            st.plotly_chart(fig_temp, width="stretch")
+        st.info(f"📋 **Instrument Assignment Config ({selected_mill}):** {sensor_info.get('notes', 'Standard Configuration')}")
+
+        fig_vib = go.Figure(go.Scatter(x=eq_data["timestamp"], y=eq_data["vibration_mm_s"], name="Vibration", line=dict(color="#00D2FF", width=2.5)))
+        fig_vib.update_layout(height=250, template="plotly_dark", title=f"Live Vibration Signal — {profile.get('vib_tag', 'VIB-SCADA')}", margin=dict(l=20, r=20, t=30, b=20))
+        st.plotly_chart(fig_vib, width="stretch")
+
+        fig_temp = go.Figure(go.Scatter(x=eq_data["timestamp"], y=eq_data["temperature_c"], name="Temperature", line=dict(color="#FF8C00", width=2.5)))
+        fig_temp.update_layout(height=250, template="plotly_dark", title=f"Live Thermal Signal — {profile.get('temp_tag', 'TIT-SCADA')}", margin=dict(l=20, r=20, t=30, b=20))
+        st.plotly_chart(fig_temp, width="stretch")
 
 # -------------------------------------------------------------------
 # PAGE ROUTING
@@ -254,11 +213,13 @@ elif main_view == "Individual Mill Monitor":
 
     elif mill_page == "Equipment Drill-Down":
         st.subheader(f"🔬 {selected_mill} - Engineering Drill-Down")
+        
         current_eq = st.session_state.get("nav_selected_eq", available_eq[0])
         eq_idx = available_eq.index(current_eq) if current_eq in available_eq else 0
+        
         selected_eq = st.selectbox("Select Subsystem:", available_eq, index=eq_idx, key="nav_selected_eq")
-
         profile = EQUIPMENT_PROFILES.get(selected_eq, {})
+
         info_col, img_col = st.columns([3, 2])
         with info_col:
             st.markdown(f"#### Tag: `{profile.get('tag', 'N/A')}` — {selected_eq}")
