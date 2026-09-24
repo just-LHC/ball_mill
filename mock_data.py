@@ -56,9 +56,9 @@ class PlantDataEngine:
         
         # 🎲 REAL-WORLD PROBABILISTIC DISTRIBUTIONS
         # 3.0% chance of a WARNING level operational drift (ISO Zone C / Moderate Heat)
-        trigger_warning = (np.random.rand() < 0.0189)
+        trigger_warning = (np.random.rand() < 0.000189)
         # 0.2% chance of a CRITICAL failure trip (ISO Zone D breach > 7.0 mm/s or Temp > 90 °C)
-        trigger_critical = (np.random.rand() < 0.002) if not trigger_warning else False
+        trigger_critical = (np.random.rand() < 0.00002) if not trigger_warning else False
         
         target_mill = np.random.choice(PLANT_MILLS) if (trigger_warning or trigger_critical) else None
         target_eq = np.random.choice(EQUIPMENT_LIST) if (trigger_warning or trigger_critical) else None
