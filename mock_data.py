@@ -28,22 +28,6 @@ MILL_EQUIPMENT_MAP = {
     ]
 }
 
-SENSOR_CHANNELS = {
-    "Mill 6": {
-        "Dynamic Separator": {
-            "vibration": ["Vib 1 (Drive End)", "Vib 2 (Non-Drive End)"],
-            "temperature": ["Temp 1 (Upper Bearing)", "Temp 2 (Lower Bearing)"]
-        }
-    },
-    "Mill 5": {
-        "Dynamic Separator": {
-            "oil_pressure": ["Oil Pressure (Bar)"],
-            "temperature": ["Bearing Temp (°C)"],
-            "motor_current": ["Motor Current (A)"]
-        }
-    }
-}
-
 class PlantDataEngine:
     def __init__(self):
         self._lock = threading.Lock()
@@ -60,6 +44,7 @@ class PlantDataEngine:
                 for i in range(num_records):
                     timestamp = now - timedelta(minutes=(num_records - i))
                     
+                    # Channels for Mill 6 & Mill 5 Multi-Sensor Setup
                     vib1 = np.random.normal(2.4, 0.3)
                     vib2 = np.random.normal(2.6, 0.3)
                     temp1 = np.random.normal(58.0, 1.0)
