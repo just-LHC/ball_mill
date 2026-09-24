@@ -44,7 +44,6 @@ class PlantDataEngine:
                 for i in range(num_records):
                     timestamp = now - timedelta(minutes=(num_records - i))
                     
-                    # Channels for Mill 6 & Mill 5 Multi-Sensor Setup
                     vib1 = np.random.normal(2.4, 0.3)
                     vib2 = np.random.normal(2.6, 0.3)
                     temp1 = np.random.normal(58.0, 1.0)
