@@ -18,6 +18,7 @@ from ui_components import (
 
 st.set_page_config(page_title="LafargeHolcim Ivory Coast - Multi-Sensor PdM Suite", layout="wide")
 
+# Session State Initialization
 if "nav_main_view" not in st.session_state:
     st.session_state["nav_main_view"] = "General Plant Overview"
 if "nav_selected_mill" not in st.session_state:
@@ -27,9 +28,27 @@ if "nav_mill_page" not in st.session_state:
 if "nav_selected_eq" not in st.session_state:
     st.session_state["nav_selected_eq"] = "Dynamic Separator"
 
+# Render Global Header & Process Search Navigation FIRST
 search_query = render_global_header()
+
+# Render Sidebar Login & Role Management
 render_sidebar_auth()
+
+# Connect to shared multi-device data engine singleton
 shared_engine = get_shared_plant_engine()
+
+def get_iso_10816_status(vib):
+    if vib <= 2.8: return "Zone A (Good / New State)", "#2ECC71"
+    elif vib <= 4.5: return "Zone B (Acceptable / Continuous Run)", "#27AE60"
+    elif vib <= 7.0: return "Zone C (Warning / Action Required)", "#F39C12"
+    else: return "Zone D (Critical / Trip Limit Breach)", "#E74C3C"
+
+EQUIPMENT_PROFILES = {
+    "Dynamic Separator": {"tag": "611-SEP-01", "description": "High-efficiency air separator.", "image_url": "https://images.unsplash.com/photo-1581092160607-ee22621dd758?auto=format&fit=crop&w=800&q=80"},
+    "Separator Filter Fan": {"tag": "611-FN-SEP", "description": "Process exhaust fan.", "image_url": "https://images.unsplash.com/photo-1504307651254-35680f356dfd?auto=format&fit=crop&w=800&q=80"},
+    "Mill Main Control": {"tag": "611-ML-DRV", "description": "Ball mill drive assembly.", "image_url": "https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?auto=format&fit=crop&w=800&q=80"},
+    "Main Filter Fan": {"tag": "611-FN-MAIN", "description": "Primary plant de-dusting fan.", "image_url": "https://images.unsplash.com/photo-1581092580497-e0d23cbdf1dc?auto=format&fit=crop&w=800&q=80"}
+}
 
 st.sidebar.title("🏭 Plant Navigation")
 
@@ -53,7 +72,7 @@ if main_view == "Individual Mill Monitor":
 streaming_active = st.sidebar.toggle("Live Telemetry Stream", value=True)
 
 # -------------------------------------------------------------------
-# GENERAL PLANT OVERVIEW
+# ISOLATED FRAGMENT: GENERAL PLANT OVERVIEW
 # -------------------------------------------------------------------
 @st.fragment(run_every="3s" if streaming_active else None)
 def render_live_overview_matrix(search_query):
@@ -114,7 +133,7 @@ def render_live_overview_matrix(search_query):
         st.dataframe(pd.DataFrame(formatted_rows), width="stretch", hide_index=True)
 
 # -------------------------------------------------------------------
-# SUBSYSTEM OVERVIEW (MULTI-SENSOR EXPANSION)
+# ISOLATED FRAGMENT: SUBSYSTEM OVERVIEW (SAFE MULTI-SENSOR FALLBACK)
 # -------------------------------------------------------------------
 @st.fragment(run_every="3s" if streaming_active else None)
 def render_live_subsystem_cards(selected_mill):
@@ -127,8 +146,10 @@ def render_live_subsystem_cards(selected_mill):
         eq_sub_df = mill_df[mill_df["equipment"] == eq]
         if not eq_sub_df.empty:
             latest = eq_sub_df.iloc[-1]
-            max_v = latest["max_vibration"]
-            max_t = latest["max_temperature"]
+            
+            # Safe extractions with fallback for initial telemetry buffer
+            max_v = latest.get("max_vibration", latest.get("vibration_mm_s", 0.0))
+            max_t = latest.get("max_temperature", latest.get("temperature_c", 0.0))
             health = simple_health_score(max_v, max_t)
             
             vib_map = latest.get("vib_sensors", {})
@@ -165,7 +186,7 @@ def render_live_subsystem_cards(selected_mill):
                         st.caption("No temperature sensors installed on this unit.")
 
 # -------------------------------------------------------------------
-# DRILL-DOWN CHARTS (MULTI-TRACE SENSOR OVERLAYS)
+# ISOLATED FRAGMENT: DRILL-DOWN CHARTS (SAFE MULTI-SENSOR FALLBACK)
 # -------------------------------------------------------------------
 @st.fragment(run_every="3s" if streaming_active else None)
 def render_live_drilldown_charts(selected_mill, selected_eq):
@@ -174,20 +195,23 @@ def render_live_drilldown_charts(selected_mill, selected_eq):
     
     if not eq_data.empty:
         latest = eq_data.iloc[-1]
+        max_v = latest.get("max_vibration", latest.get("vibration_mm_s", 0.0))
+        max_t = latest.get("max_temperature", latest.get("temperature_c", 0.0))
+        
         vib_map = latest.get("vib_sensors", {})
         temp_map = latest.get("temp_sensors", {})
         
         m1, m2, m3 = st.columns(3)
-        m1.metric("Subsystem Health", f"{simple_health_score(latest['max_vibration'], latest['max_temperature'])}%")
-        m2.metric("Max Vibration RMS", f"{latest['max_vibration']} mm/s")
-        m3.metric("Max Bearing Temp", f"{latest['max_temperature']} °C")
+        m1.metric("Subsystem Health", f"{simple_health_score(max_v, max_t)}%")
+        m2.metric("Max Vibration RMS", f"{max_v} mm/s")
+        m3.metric("Max Bearing Temp", f"{max_t} °C")
 
         # Multi-Trace Vibration Plot
         if vib_map:
             fig_vib = go.Figure()
             sensor_names = list(vib_map.keys())
             for s_name in sensor_names:
-                y_vals = [row.get("vib_sensors", {}).get(s_name, 0.0) for _, row in eq_data.iterrows()]
+                y_vals = [row.get("vib_sensors", {}).get(s_name, row.get("vibration_mm_s", 0.0)) for _, row in eq_data.iterrows()]
                 fig_vib.add_trace(go.Scatter(x=eq_data["timestamp"], y=y_vals, mode="lines", name=s_name))
             
             fig_vib.update_layout(
@@ -204,7 +228,7 @@ def render_live_drilldown_charts(selected_mill, selected_eq):
             fig_temp = go.Figure()
             sensor_names = list(temp_map.keys())
             for s_name in sensor_names:
-                y_vals = [row.get("temp_sensors", {}).get(s_name, 0.0) for _, row in eq_data.iterrows()]
+                y_vals = [row.get("temp_sensors", {}).get(s_name, row.get("temperature_c", 0.0)) for _, row in eq_data.iterrows()]
                 fig_temp.add_trace(go.Scatter(x=eq_data["timestamp"], y=y_vals, mode="lines", name=s_name))
             
             fig_temp.update_layout(
@@ -233,6 +257,14 @@ elif main_view == "Individual Mill Monitor":
         current_eq = st.session_state.get("nav_selected_eq", available_eq[0])
         eq_idx = available_eq.index(current_eq) if current_eq in available_eq else 0
         selected_eq = st.selectbox("Select Subsystem:", available_eq, index=eq_idx, key="nav_selected_eq")
+
+        profile = EQUIPMENT_PROFILES.get(selected_eq, {})
+        info_col, img_col = st.columns([3, 2])
+        with info_col:
+            st.markdown(f"#### Tag: `{profile.get('tag', 'N/A')}` — {selected_eq}")
+            st.write(f"**Description:** {profile.get('description', 'N/A')}")
+        with img_col:
+            st.image(profile.get("image_url"), caption=f"P&ID Layout: {selected_eq}", width="stretch")
 
         st.markdown("---")
         render_live_drilldown_charts(selected_mill, selected_eq)
