@@ -28,31 +28,17 @@ MILL_EQUIPMENT_MAP = {
     ]
 }
 
-# Sensor channel definitions per subsystem
 SENSOR_CHANNELS = {
     "Mill 6": {
         "Dynamic Separator": {
             "vibration": ["Vib 1 (Drive End)", "Vib 2 (Non-Drive End)"],
             "temperature": ["Temp 1 (Upper Bearing)", "Temp 2 (Lower Bearing)"]
-        },
-        "Separator Filter Fan": {
-            "vibration": ["Vib 1 (Fan Bearing)", "Vib 2 (Motor Bearing)"],
-            "temperature": ["Temp 1 (Housing)", "Temp 2 (Motor Winding)"]
-        },
-        "Main Filter Fan": {
-            "vibration": ["Vib 1 (Inlet)", "Vib 2 (Outlet)"],
-            "temperature": []
         }
     },
     "Mill 5": {
         "Dynamic Separator": {
             "oil_pressure": ["Oil Pressure (Bar)"],
             "temperature": ["Bearing Temp (°C)"],
-            "motor_current": ["Motor Current (A)"]
-        },
-        "Separator Filter Fan": {
-            "vibration": ["Vib 1 (Fan)", "Vib 2 (Motor)"],
-            "temperature": ["Temp 1 (Inlet)", "Temp 2 (Outlet)"],
             "motor_current": ["Motor Current (A)"]
         }
     }
@@ -74,20 +60,12 @@ class PlantDataEngine:
                 for i in range(num_records):
                     timestamp = now - timedelta(minutes=(num_records - i))
                     
-                    # Mill 6 Dynamic Separator Channels
                     vib1 = np.random.normal(2.4, 0.3)
                     vib2 = np.random.normal(2.6, 0.3)
                     temp1 = np.random.normal(58.0, 1.0)
                     temp2 = np.random.normal(60.0, 1.0)
-                    
-                    # Mill 5 Dynamic Separator Channels
                     oil_press = np.random.normal(4.2, 0.15)
-                    m5_temp = np.random.normal(61.5, 0.8)
                     m5_curr = np.random.normal(145.0, 3.0)
-
-                    # General fallback values
-                    vib_gen = np.random.normal(2.5, 0.3)
-                    temp_gen = np.random.normal(55.0, 1.0)
 
                     data.append({
                         "timestamp": timestamp,
@@ -116,7 +94,6 @@ class PlantDataEngine:
             for eq in eq_list:
                 is_target = (trigger_warning or trigger_critical) and mill == target_mill and eq == target_eq
                 
-                # Mill 6 Separator Channel Base Values
                 v1_base, v2_base = (7.8, 8.1) if is_target and trigger_critical else ((5.2, 5.5) if is_target else (2.4, 2.6))
                 t1_base, t2_base = (93.0, 95.0) if is_target and trigger_critical else ((78.0, 81.0) if is_target else (58.0, 60.0))
                 
@@ -125,7 +102,6 @@ class PlantDataEngine:
                 temp1 = np.random.normal(t1_base, 1.0)
                 temp2 = np.random.normal(t2_base, 1.0)
 
-                # Mill 5 Separator Channel Base Values
                 oil_press = np.random.normal(2.1, 0.1) if is_target and trigger_critical else np.random.normal(4.2, 0.15)
                 m5_curr = np.random.normal(210.0, 5.0) if is_target and trigger_critical else np.random.normal(145.0, 3.0)
 
