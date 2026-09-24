@@ -126,7 +126,7 @@ def render_live_overview_matrix(search_query):
         st.dataframe(alerts_df, width="stretch", hide_index=True)
 
 # -------------------------------------------------------------------
-# SUBSYSTEM OVERVIEW
+# SUBSYSTEM OVERVIEW (ALL AVAILABLE LIVE SENSOR VALUES GROUPED BY COMPANY)
 # -------------------------------------------------------------------
 @st.fragment(run_every="3s" if streaming_active else None)
 def render_live_subsystem_cards(selected_mill):
@@ -149,36 +149,82 @@ def render_live_subsystem_cards(selected_mill):
                 elif health > 50: st.warning(f"Health: {health}%")
                 else: st.error(f"Health: {health}%")
                 
-                # Mill 6 Main Control Overview
+                # --- MILL 6 MAIN CONTROL (16 LIVE SENSORS) ---
                 if selected_mill == "Mill 6" and eq == "Mill Main Control":
-                    st.write("**Gearbox:** 10 OCP Vib | 2 HLC Vib")
-                    st.write("**Motor:** 2 OCP Vib | 2 HLC Temp")
-                    st.metric("Peak Gearbox Vib (OCP)", f"{latest.get('ocp_gb_vib_1', 2.8)} mm/s")
-                    st.metric("Peak Motor Temp (HLC)", f"{latest.get('hlc_mtr_tmp_1', 62.0)} °C")
+                    st.markdown("**🔹 OCP Company Sensors**")
+                    st.caption("Gearbox Vibration (10 Sensors):")
+                    for idx in range(1, 11):
+                        st.metric(f"OCP GB Vib #{idx}", f"{latest.get(f'ocp_gb_vib_{idx}', 2.8)} mm/s")
+                    st.caption("Motor Vibration (2 Sensors):")
+                    for idx in range(1, 3):
+                        st.metric(f"OCP Motor Vib #{idx}", f"{latest.get(f'ocp_mtr_vib_{idx}', 2.1)} mm/s")
+                    
+                    st.markdown("**🔸 HLC Company Sensors**")
+                    st.caption("Gearbox Vibration (2 Sensors):")
+                    for idx in range(1, 3):
+                        st.metric(f"HLC GB Vib #{idx}", f"{latest.get(f'hlc_gb_vib_{idx}', 2.4)} mm/s")
+                    st.caption("Motor Temperature (2 Sensors):")
+                    for idx in range(1, 3):
+                        st.metric(f"HLC Motor Temp #{idx}", f"{latest.get(f'hlc_mtr_tmp_{idx}', 62.0)} °C")
 
-                # Mill 5 Main Control Overview
+                # --- MILL 5 MAIN CONTROL (31 LIVE SENSORS) ---
                 elif selected_mill == "Mill 5" and eq == "Mill Main Control":
-                    st.write("**Gearbox 1:** 10 OCP Vib | 10 OCP Temp | 3 HLC Vib")
-                    st.write("**Gearbox 2:** 6 HLC Temp")
-                    st.write("**Motor:** 1 HLC Temp | 1 HLC Current")
-                    st.metric("GB1 Peak Vib (OCP)", f"{latest.get('m5_ocp_gb1_vib_1', 3.0)} mm/s")
-                    st.metric("GB2 Peak Temp (HLC)", f"{latest.get('m5_hlc_gb2_tmp_1', 68.0)} °C")
-                    st.metric("Motor Current (HLC)", f"{latest.get('m5_hlc_mtr_cur_1', 185.0)} A")
+                    st.markdown("**🔹 OCP Company Sensors**")
+                    st.caption("Gearbox 1 Vibration (10 Sensors):")
+                    for idx in range(1, 11):
+                        st.metric(f"OCP GB1 Vib #{idx}", f"{latest.get(f'm5_ocp_gb1_vib_{idx}', 3.0)} mm/s")
+                    st.caption("Gearbox 1 Temperature (10 Sensors):")
+                    for idx in range(1, 11):
+                        st.metric(f"OCP GB1 Temp #{idx}", f"{latest.get(f'm5_ocp_gb1_tmp_{idx}', 65.0)} °C")
 
-                # Mill 6 Dynamic Separator
+                    st.markdown("**🔸 HLC Company Sensors**")
+                    st.caption("Gearbox 1 Vibration (3 Sensors):")
+                    for idx in range(1, 4):
+                        st.metric(f"HLC GB1 Vib #{idx}", f"{latest.get(f'm5_hlc_gb1_vib_{idx}', 2.6)} mm/s")
+                    st.caption("Gearbox 2 Temperature (6 Sensors):")
+                    for idx in range(1, 7):
+                        st.metric(f"HLC GB2 Temp #{idx}", f"{latest.get(f'm5_hlc_gb2_tmp_{idx}', 68.0)} °C")
+                    st.caption("Motor Telemetry (2 Sensors):")
+                    st.metric("HLC Motor Temp #1", f"{latest.get('m5_hlc_mtr_tmp_1', 64.5)} °C")
+                    st.metric("HLC Motor Current #1", f"{latest.get('m5_hlc_mtr_cur_1', 185.0)} A")
+
+                # --- MILL 6 DYNAMIC SEPARATOR ---
                 elif selected_mill == "Mill 6" and eq == "Dynamic Separator":
                     st.metric("Vibration 1 (DE)", f"{latest.get('vibration_mm_s', 2.4)} mm/s")
                     st.metric("Vibration 2 (NDE)", f"{latest.get('vibration_2_mm_s', 2.6)} mm/s")
                     st.metric("Temp 1 (Upper)", f"{latest.get('temperature_c', 58.0)} °C")
                     st.metric("Temp 2 (Lower)", f"{latest.get('temperature_2_c', 60.0)} °C")
                     
-                # Mill 5 Dynamic Separator
+                # --- MILL 5 DYNAMIC SEPARATOR ---
                 elif selected_mill == "Mill 5" and eq == "Dynamic Separator":
                     st.metric("Oil Pressure", f"{latest.get('oil_pressure_bar', 4.2)} bar")
                     st.metric("Bearing Temp", f"{latest.get('temperature_c', 61.5)} °C")
                     st.metric("Motor Current", f"{latest.get('motor_current_a', 145.0)} A")
 
-                # Fallback Subsystems
+                # --- MILL 6 SEPARATOR FILTER FAN ---
+                elif selected_mill == "Mill 6" and eq == "Separator Filter Fan":
+                    st.metric("Vibration 1 (Fan)", f"{latest.get('vibration_mm_s', 2.4)} mm/s")
+                    st.metric("Vibration 2 (Motor)", f"{latest.get('vibration_2_mm_s', 2.6)} mm/s")
+                    st.metric("Temp 1 (Bearing)", f"{latest.get('temperature_c', 58.0)} °C")
+                    st.metric("Temp 2 (Winding)", f"{latest.get('temperature_2_c', 60.0)} °C")
+
+                # --- MILL 5 SEPARATOR FILTER FAN ---
+                elif selected_mill == "Mill 5" and eq == "Separator Filter Fan":
+                    st.metric("Vibration 1 (Fan)", f"{latest.get('vibration_mm_s', 2.4)} mm/s")
+                    st.metric("Vibration 2 (Motor)", f"{latest.get('vibration_2_mm_s', 2.6)} mm/s")
+                    st.metric("Temp 1 (Inlet)", f"{latest.get('temperature_c', 58.0)} °C")
+                    st.metric("Temp 2 (Outlet)", f"{latest.get('temperature_2_c', 60.0)} °C")
+                    st.metric("Motor Current", f"{latest.get('motor_current_a', 145.0)} A")
+
+                # --- MILL 6 MAIN FILTER FAN ---
+                elif selected_mill == "Mill 6" and eq == "Main Filter Fan":
+                    st.metric("Vibration 1 (Inlet)", f"{latest.get('vibration_mm_s', 2.4)} mm/s")
+                    st.metric("Vibration 2 (Outlet)", f"{latest.get('vibration_2_mm_s', 2.6)} mm/s")
+                    st.metric("Motor Power", f"{latest.get('electrical_power_kw', 320.0)} kW")
+                    st.metric("Motor Speed", f"{latest.get('motor_speed_rpm', 980.0)} RPM")
+                    st.metric("Motor Temp", f"{latest.get('motor_temp_c', 68.0)} °C")
+                    
+                # --- GENERAL FALLBACK ---
                 else:
                     st.metric("Vibration RMS", f"{latest.get('vibration_mm_s', 2.5)} mm/s")
                     st.metric("Bearing Temp", f"{latest.get('temperature_c', 55.0)} °C")
@@ -198,7 +244,6 @@ def render_live_drilldown_charts(selected_mill, selected_eq):
         if selected_mill == "Mill 6" and selected_eq == "Mill Main Control":
             st.markdown("#### ⚙️ Gearbox Sensors (12 Graphs)")
             
-            # 10 OCP Vibration Sensors
             st.markdown("##### OCP Company — Gearbox Vibration Sensors (10 Channels)")
             cols_gb1 = st.columns(2)
             for i in range(1, 11):
@@ -208,7 +253,6 @@ def render_live_drilldown_charts(selected_mill, selected_eq):
                 fig.update_layout(height=200, template="plotly_dark", title=f"OCP Gearbox Vib Sensor #{i} — Tag: OCP-GB-VIB-{i:02d} (mm/s)")
                 col_target.plotly_chart(fig, width="stretch")
 
-            # 2 HLC Vibration Sensors
             st.markdown("##### HLC Company — Gearbox Vibration Sensors (2 Channels)")
             cols_gb2 = st.columns(2)
             for i in range(1, 3):
@@ -221,14 +265,12 @@ def render_live_drilldown_charts(selected_mill, selected_eq):
             st.markdown("#### ⚡ Motor Sensors (4 Graphs)")
             cols_mtr = st.columns(2)
             
-            # 2 OCP Motor Vibration Sensors
             for i in range(1, 3):
                 val = eq_data[f"ocp_mtr_vib_{i}"] if f"ocp_mtr_vib_{i}" in eq_data.columns else [2.1]*len(eq_data)
                 fig = go.Figure(go.Scatter(x=eq_data["timestamp"], y=val, line=dict(color="#FFD700", width=2)))
                 fig.update_layout(height=200, template="plotly_dark", title=f"OCP Motor Vib Sensor #{i} — Tag: OCP-MTR-VIB-{i:02d} (mm/s)")
                 cols_mtr[0].plotly_chart(fig, width="stretch")
 
-            # 2 HLC Motor Temperature Sensors
             for i in range(1, 3):
                 val = eq_data[f"hlc_mtr_tmp_{i}"] if f"hlc_mtr_tmp_{i}" in eq_data.columns else [62.0]*len(eq_data)
                 fig = go.Figure(go.Scatter(x=eq_data["timestamp"], y=val, line=dict(color="#FF4500", width=2)))
@@ -238,7 +280,6 @@ def render_live_drilldown_charts(selected_mill, selected_eq):
         # --- MILL 5 MAIN CONTROL: 31 INDIVIDUAL GRAPHS ---
         elif selected_mill == "Mill 5" and selected_eq == "Mill Main Control":
             
-            # Section 1: Gearbox One (23 Graphs)
             with st.expander("⚙️ Gearbox Section One — 23 Channels (10 OCP Vib, 10 OCP Temp, 3 HLC Vib)", expanded=True):
                 st.markdown("##### OCP Company — Gearbox 1 Vibration Sensors (10 Channels)")
                 c_v1, c_v2 = st.columns(2)
@@ -267,7 +308,6 @@ def render_live_drilldown_charts(selected_mill, selected_eq):
                     fig.update_layout(height=190, template="plotly_dark", title=f"HLC GB1 Vib #{i} — Tag: HLC-M5-GB1-VIB-{i:02d} (mm/s)")
                     cols_hlc[i-1].plotly_chart(fig, width="stretch")
 
-            # Section 2: Gearbox Two (6 Graphs)
             with st.expander("⚙️ Gearbox Section Two — 6 Channels (HLC Temperature)", expanded=True):
                 st.markdown("##### HLC Company — Gearbox 2 Temperature Sensors (6 Channels)")
                 cg2_1, cg2_2 = st.columns(2)
@@ -278,7 +318,6 @@ def render_live_drilldown_charts(selected_mill, selected_eq):
                     fig.update_layout(height=190, template="plotly_dark", title=f"HLC GB2 Temp #{i} — Tag: HLC-M5-GB2-TMP-{i:02d} (°C)")
                     target.plotly_chart(fig, width="stretch")
 
-            # Section 3: Motor (2 Graphs)
             with st.expander("⚡ Motor Subsystem — 2 Channels (HLC Temperature & Current)", expanded=True):
                 cm1, cm2 = st.columns(2)
                 t_m5 = eq_data["m5_hlc_mtr_tmp_1"] if "m5_hlc_mtr_tmp_1" in eq_data.columns else [64.5]*len(eq_data)

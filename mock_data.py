@@ -59,7 +59,6 @@ class PlantDataEngine:
                         "motor_temp_c": round(max(0, np.random.normal(68.0, 1.2)), 1)
                     }
 
-                    # Populate Mill 6 Main Control Channels (16 total)
                     if mill == "Mill 6" and eq == "Mill Main Control":
                         for idx in range(1, 11):
                             record[f"ocp_gb_vib_{idx}"] = round(max(0, np.random.normal(2.8 + idx*0.1, 0.3)), 2)
@@ -68,7 +67,6 @@ class PlantDataEngine:
                             record[f"ocp_mtr_vib_{idx}"] = round(max(0, np.random.normal(2.1, 0.2)), 2)
                             record[f"hlc_mtr_tmp_{idx}"] = round(np.random.normal(62.0 + idx, 1.1), 1)
 
-                    # Populate Mill 5 Main Control Channels (31 total)
                     elif mill == "Mill 5" and eq == "Mill Main Control":
                         for idx in range(1, 11):
                             record[f"m5_ocp_gb1_vib_{idx}"] = round(max(0, np.random.normal(3.0 + idx*0.05, 0.3)), 2)
@@ -115,7 +113,6 @@ class PlantDataEngine:
                     "motor_temp_c": round(max(0, np.random.normal(68.0, 1.2)), 1)
                 }
 
-                # Live Tick Mill 6 Main Control Channels
                 if mill == "Mill 6" and eq == "Mill Main Control":
                     mult = 2.5 if is_target and trigger_critical else 1.0
                     for idx in range(1, 11):
@@ -125,7 +122,6 @@ class PlantDataEngine:
                         record[f"ocp_mtr_vib_{idx}"] = round(max(0, np.random.normal(2.1*mult, 0.2)), 2)
                         record[f"hlc_mtr_tmp_{idx}"] = round(np.random.normal((62.0 + idx)*mult, 1.1), 1)
 
-                # Live Tick Mill 5 Main Control Channels
                 elif mill == "Mill 5" and eq == "Mill Main Control":
                     mult = 2.5 if is_target and trigger_critical else 1.0
                     for idx in range(1, 11):
