@@ -1,11 +1,24 @@
+import sys
+import importlib
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 import time
 import threading
 import streamlit as st
-from ml_engine import analyze_telemetry_diagnostics
 
+# Safe import for ml_engine to prevent Streamlit 3.14 sys.modules KeyError on hot reload
+try:
+    if "ml_engine" in sys.modules and sys.modules["ml_engine"] is not None:
+        ml_engine = sys.modules["ml_engine"]
+    else:
+        ml_engine = importlib.import_module("ml_engine")
+    analyze_telemetry_diagnostics = ml_engine.analyze_telemetry_diagnostics
+except Exception as e:
+    # Direct fallback if sys.modules key error occurs during thread execution
+    from ml_engine import analyze_telemetry_diagnostics
+
+# Attach Streamlit ScriptRunContext safely
 try:
     from streamlit.runtime.scriptrunner import add_script_run_context, get_script_run_ctx
 except ImportError:
