@@ -13,17 +13,62 @@ from db_engine import fetch_all_alerts
 
 shared_engine = get_shared_plant_engine()
 
-def get_iso_10816_status(vib):
-    if vib <= 2.8: return "Zone A (Good / New State)", "#2ECC71"
-    elif vib <= 4.5: return "Zone B (Acceptable / Continuous Run)", "#27AE60"
-    elif vib <= 7.0: return "Zone C (Warning / Action Required)", "#F39C12"
-    else: return "Zone D (Critical / Trip Limit Breach)", "#E74C3C"
+def inject_silent_stream_css():
+    """Injects CSS rules to lock container bounds and eliminate visual layout jitter during live SCADA updates."""
+    st.markdown(
+        """
+        <style>
+            /* Stabilize metric cards to prevent height flickering */
+            div[data-testid="stMetric"] {
+                background-color: #1E222A;
+                padding: 12px;
+                border-radius: 8px;
+                border: 1px solid #2E3440;
+                transition: none !important;
+            }
+            div[data-testid="stMetricValue"] {
+                font-size: 1.5rem !important;
+                font-weight: 700;
+            }
+            /* Freeze Plotly wrapper bounds so graph frames don't bounce */
+            .stPlotlyChart {
+                min-height: 200px;
+            }
+            /* Smooth transitions for seamless data ticks */
+            * {
+                transition: background-color 0.2s ease, color 0.2s ease;
+            }
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
+
+def create_smooth_line_chart(x_data, y_data, title, color="#00D2FF", height=200):
+    """Generates a Plotly chart configured with uirevision to prevent visual flickering on telemetry ticks."""
+    fig = go.Figure(go.Scatter(
+        x=x_data, 
+        y=y_data, 
+        mode="lines",
+        line=dict(color=color, width=2),
+        hoverinfo="x+y"
+    ))
+    fig.update_layout(
+        title=dict(text=title, font=dict(size=13, color="#ECEFF4")),
+        height=height,
+        margin=dict(l=30, r=20, t=35, b=25),
+        template="plotly_dark",
+        uirevision=True,  # Keeps graph position static during live background data appends
+        xaxis=dict(showgrid=False, zeroline=False),
+        yaxis=dict(showgrid=True, gridcolor="#2E3440", zeroline=False)
+    )
+    return fig
 
 # -------------------------------------------------------------------
 # 1. GENERAL PLANT OVERVIEW MATRIX
 # -------------------------------------------------------------------
 @st.fragment(run_every="3s")
 def render_live_overview_matrix(search_query):
+    inject_silent_stream_css()
     all_db_alerts = fetch_all_alerts() or shared_engine.alerts_log
 
     alerts_to_display = all_db_alerts
@@ -98,6 +143,7 @@ def render_live_overview_matrix(search_query):
 # -------------------------------------------------------------------
 @st.fragment(run_every="3s")
 def render_live_subsystem_cards(selected_mill):
+    inject_silent_stream_css()
     mill_df = shared_engine.df[shared_engine.df["mill"] == selected_mill]
     available_eq = MILL_EQUIPMENT_MAP.get(selected_mill, [])
     
@@ -199,10 +245,11 @@ def render_live_subsystem_cards(selected_mill):
                     st.metric("Bearing Temp", f"{latest.get('temperature_c', 55.0)} °C")
 
 # -------------------------------------------------------------------
-# 3. EQUIPMENT DRILL-DOWN CHARTS
+# 3. EQUIPMENT DRILL-DOWN CHARTS (Smooth Background Telemetry Update)
 # -------------------------------------------------------------------
 @st.fragment(run_every="3s")
 def render_live_drilldown_charts(selected_mill, selected_eq):
+    inject_silent_stream_css()
     mill_df = shared_engine.df[shared_engine.df["mill"] == selected_mill]
     eq_data = mill_df[mill_df["equipment"] == selected_eq]
     
@@ -214,15 +261,13 @@ def render_live_drilldown_charts(selected_mill, selected_eq):
             c_gb1, c_gb2 = st.columns(2)
             for i in range(1, 3):
                 val = eq_data[f"m4_gb_vib_{i}"] if f"m4_gb_vib_{i}" in eq_data.columns else [2.5]*len(eq_data)
-                fig = go.Figure(go.Scatter(x=eq_data["timestamp"], y=val, line=dict(color="#00D2FF", width=2)))
-                fig.update_layout(height=200, template="plotly_dark", title=f"Gearbox Vib Sensor #{i} — Tag: M4-GB-VIB-{i:02d} (mm/s)")
-                c_gb1.plotly_chart(fig, width="stretch")
+                fig = create_smooth_line_chart(eq_data["timestamp"], val, f"Gearbox Vib Sensor #{i} — Tag: M4-GB-VIB-{i:02d} (mm/s)", "#00D2FF")
+                c_gb1.plotly_chart(fig, width="stretch", key=f"p_m4gbv_{i}")
 
             for i in range(1, 4):
                 val = eq_data[f"m4_gb_tmp_{i}"] if f"m4_gb_tmp_{i}" in eq_data.columns else [61.0]*len(eq_data)
-                fig = go.Figure(go.Scatter(x=eq_data["timestamp"], y=val, line=dict(color="#FF8C00", width=2)))
-                fig.update_layout(height=200, template="plotly_dark", title=f"Gearbox Temp Sensor #{i} — Tag: M4-GB-TMP-{i:02d} (°C)")
-                c_gb2.plotly_chart(fig, width="stretch")
+                fig = create_smooth_line_chart(eq_data["timestamp"], val, f"Gearbox Temp Sensor #{i} — Tag: M4-GB-TMP-{i:02d} (°C)", "#FF8C00")
+                c_gb2.plotly_chart(fig, width="stretch", key=f"p_m4gbt_{i}")
 
             st.markdown("---")
             st.markdown("#### ⚡ Motor Sensors (6 Graphs)")
@@ -230,36 +275,31 @@ def render_live_drilldown_charts(selected_mill, selected_eq):
             for i in range(1, 6):
                 target = c_m1 if i % 2 != 0 else c_m2
                 val = eq_data[f"m4_mtr_tmp_{i}"] if f"m4_mtr_tmp_{i}" in eq_data.columns else [63.0]*len(eq_data)
-                fig = go.Figure(go.Scatter(x=eq_data["timestamp"], y=val, line=dict(color="#FF33A8", width=2)))
-                fig.update_layout(height=200, template="plotly_dark", title=f"Motor Temp Sensor #{i} — Tag: M4-MTR-TMP-{i:02d} (°C)")
-                target.plotly_chart(fig, width="stretch")
+                fig = create_smooth_line_chart(eq_data["timestamp"], val, f"Motor Temp Sensor #{i} — Tag: M4-MTR-TMP-{i:02d} (°C)", "#FF33A8")
+                target.plotly_chart(fig, width="stretch", key=f"p_m4mt_{i}")
 
             cur_m4 = eq_data["m4_mtr_cur_1"] if "m4_mtr_cur_1" in eq_data.columns else [160.0]*len(eq_data)
-            fig_cur = go.Figure(go.Scatter(x=eq_data["timestamp"], y=cur_m4, line=dict(color="#D500F9", width=2)))
-            fig_cur.update_layout(height=200, template="plotly_dark", title="Motor Current Sensor #1 — Tag: M4-MTR-CUR-01 (Amperes)")
-            st.plotly_chart(fig_cur, width="stretch")
+            fig_cur = create_smooth_line_chart(eq_data["timestamp"], cur_m4, "Motor Current Sensor #1 — Tag: M4-MTR-CUR-01 (Amperes)", "#D500F9")
+            st.plotly_chart(fig_cur, width="stretch", key="p_m4cur_1")
 
         elif selected_mill == "Mill 1 (White Cement)" and selected_eq == "Mill Main Control":
             st.markdown("#### ⚙️ Gearbox Sensors (5 Graphs)")
             c_m1_1, c_m1_2 = st.columns(2)
             for i in range(1, 3):
                 val = eq_data[f"m1_gb_vib_{i}"] if f"m1_gb_vib_{i}" in eq_data.columns else [2.3]*len(eq_data)
-                fig = go.Figure(go.Scatter(x=eq_data["timestamp"], y=val, line=dict(color="#00E5FF", width=2)))
-                fig.update_layout(height=200, template="plotly_dark", title=f"Gearbox Vib Sensor #{i} — Tag: M1-GB-VIB-{i:02d} (mm/s)")
-                c_m1_1.plotly_chart(fig, width="stretch")
+                fig = create_smooth_line_chart(eq_data["timestamp"], val, f"Gearbox Vib Sensor #{i} — Tag: M1-GB-VIB-{i:02d} (mm/s)", "#00E5FF")
+                c_m1_1.plotly_chart(fig, width="stretch", key=f"p_m1gbv_{i}")
 
             for i in range(1, 4):
                 val = eq_data[f"m1_gb_tmp_{i}"] if f"m1_gb_tmp_{i}" in eq_data.columns else [59.0]*len(eq_data)
-                fig = go.Figure(go.Scatter(x=eq_data["timestamp"], y=val, line=dict(color="#FF9100", width=2)))
-                fig.update_layout(height=200, template="plotly_dark", title=f"Gearbox Temp Sensor #{i} — Tag: M1-GB-TMP-{i:02d} (°C)")
-                c_m1_2.plotly_chart(fig, width="stretch")
+                fig = create_smooth_line_chart(eq_data["timestamp"], val, f"Gearbox Temp Sensor #{i} — Tag: M1-GB-TMP-{i:02d} (°C)", "#FF9100")
+                c_m1_2.plotly_chart(fig, width="stretch", key=f"p_m1gbt_{i}")
 
             st.markdown("---")
             st.markdown("#### ⚡ Motor Sensors (1 Graph)")
             cur_m1 = eq_data["m1_mtr_cur_1"] if "m1_mtr_cur_1" in eq_data.columns else [140.0]*len(eq_data)
-            fig_cur1 = go.Figure(go.Scatter(x=eq_data["timestamp"], y=cur_m1, line=dict(color="#76FF03", width=2)))
-            fig_cur1.update_layout(height=220, template="plotly_dark", title="Motor Current Sensor #1 — Tag: M1-MTR-CUR-01 (Amperes)")
-            st.plotly_chart(fig_cur1, width="stretch")
+            fig_cur1 = create_smooth_line_chart(eq_data["timestamp"], cur_m1, "Motor Current Sensor #1 — Tag: M1-MTR-CUR-01 (Amperes)", "#76FF03")
+            st.plotly_chart(fig_cur1, width="stretch", key="p_m1cur_1")
 
         elif selected_mill == "Mill 6" and selected_eq == "Mill Main Control":
             st.markdown("#### ⚙️ Gearbox Sensors (12 Graphs)")
@@ -268,32 +308,28 @@ def render_live_drilldown_charts(selected_mill, selected_eq):
             for i in range(1, 11):
                 target = cols_gb1[0] if i % 2 != 0 else cols_gb1[1]
                 val = eq_data[f"ocp_gb_vib_{i}"] if f"ocp_gb_vib_{i}" in eq_data.columns else [2.8]*len(eq_data)
-                fig = go.Figure(go.Scatter(x=eq_data["timestamp"], y=val, line=dict(color="#00D2FF", width=2)))
-                fig.update_layout(height=200, template="plotly_dark", title=f"OCP GB Vib #{i} — Tag: OCP-GB-VIB-{i:02d} (mm/s)")
-                target.plotly_chart(fig, width="stretch")
+                fig = create_smooth_line_chart(eq_data["timestamp"], val, f"OCP GB Vib #{i} — Tag: OCP-GB-VIB-{i:02d} (mm/s)", "#00D2FF")
+                target.plotly_chart(fig, width="stretch", key=f"p_m6ocpv_{i}")
 
             st.markdown("##### HLC Company — Gearbox Vibration Sensors (2 Channels)")
             cols_gb2 = st.columns(2)
             for i in range(1, 3):
                 val = eq_data[f"hlc_gb_vib_{i}"] if f"hlc_gb_vib_{i}" in eq_data.columns else [2.4]*len(eq_data)
-                fig = go.Figure(go.Scatter(x=eq_data["timestamp"], y=val, line=dict(color="#33FF57", width=2)))
-                fig.update_layout(height=200, template="plotly_dark", title=f"HLC GB Vib #{i} — Tag: HLC-GB-VIB-{i:02d} (mm/s)")
-                cols_gb2[i-1].plotly_chart(fig, width="stretch")
+                fig = create_smooth_line_chart(eq_data["timestamp"], val, f"HLC GB Vib #{i} — Tag: HLC-GB-VIB-{i:02d} (mm/s)", "#33FF57")
+                cols_gb2[i-1].plotly_chart(fig, width="stretch", key=f"p_m6hlcv_{i}")
 
             st.markdown("---")
             st.markdown("#### ⚡ Motor Sensors (4 Graphs)")
             cols_mtr = st.columns(2)
             for i in range(1, 3):
                 val = eq_data[f"ocp_mtr_vib_{i}"] if f"ocp_mtr_vib_{i}" in eq_data.columns else [2.1]*len(eq_data)
-                fig = go.Figure(go.Scatter(x=eq_data["timestamp"], y=val, line=dict(color="#FFD700", width=2)))
-                fig.update_layout(height=200, template="plotly_dark", title=f"OCP Motor Vib #{i} — Tag: OCP-MTR-VIB-{i:02d} (mm/s)")
-                cols_mtr[0].plotly_chart(fig, width="stretch")
+                fig = create_smooth_line_chart(eq_data["timestamp"], val, f"OCP Motor Vib #{i} — Tag: OCP-MTR-VIB-{i:02d} (mm/s)", "#FFD700")
+                cols_mtr[0].plotly_chart(fig, width="stretch", key=f"p_m6ocpmv_{i}")
 
             for i in range(1, 3):
                 val = eq_data[f"hlc_mtr_tmp_{i}"] if f"hlc_mtr_tmp_{i}" in eq_data.columns else [62.0]*len(eq_data)
-                fig = go.Figure(go.Scatter(x=eq_data["timestamp"], y=val, line=dict(color="#FF4500", width=2)))
-                fig.update_layout(height=200, template="plotly_dark", title=f"HLC Motor Temp #{i} — Tag: HLC-MTR-TMP-{i:02d} (°C)")
-                cols_mtr[1].plotly_chart(fig, width="stretch")
+                fig = create_smooth_line_chart(eq_data["timestamp"], val, f"HLC Motor Temp #{i} — Tag: HLC-MTR-TMP-{i:02d} (°C)", "#FF4500")
+                cols_mtr[1].plotly_chart(fig, width="stretch", key=f"p_m6hlcmt_{i}")
 
         elif selected_mill == "Mill 5" and selected_eq == "Mill Main Control":
             with st.expander("⚙️ Gearbox Section One — 23 Channels (10 OCP Vib, 10 OCP Temp, 3 HLC Vib)", expanded=True):
@@ -302,27 +338,24 @@ def render_live_drilldown_charts(selected_mill, selected_eq):
                 for i in range(1, 11):
                     target = c_v1 if i % 2 != 0 else c_v2
                     val = eq_data[f"m5_ocp_gb1_vib_{i}"] if f"m5_ocp_gb1_vib_{i}" in eq_data.columns else [3.0]*len(eq_data)
-                    fig = go.Figure(go.Scatter(x=eq_data["timestamp"], y=val, line=dict(color="#00E5FF", width=2)))
-                    fig.update_layout(height=190, template="plotly_dark", title=f"OCP GB1 Vib #{i} — Tag: OCP-M5-GB1-VIB-{i:02d} (mm/s)")
-                    target.plotly_chart(fig, width="stretch")
+                    fig = create_smooth_line_chart(eq_data["timestamp"], val, f"OCP GB1 Vib #{i} — Tag: OCP-M5-GB1-VIB-{i:02d} (mm/s)", "#00E5FF", 190)
+                    target.plotly_chart(fig, width="stretch", key=f"p_m5ocpv1_{i}")
 
                 st.markdown("##### OCP Company — Gearbox 1 Temperature Sensors (10 Channels)")
                 c_t1, c_t2 = st.columns(2)
                 for i in range(1, 11):
                     target = c_t1 if i % 2 != 0 else c_t2
                     val = eq_data[f"m5_ocp_gb1_tmp_{i}"] if f"m5_ocp_gb1_tmp_{i}" in eq_data.columns else [65.0]*len(eq_data)
-                    fig = go.Figure(go.Scatter(x=eq_data["timestamp"], y=val, line=dict(color="#FF9100", width=2)))
-                    fig.update_layout(height=190, template="plotly_dark", title=f"OCP GB1 Temp #{i} — Tag: OCP-M5-GB1-TMP-{i:02d} (°C)")
-                    target.plotly_chart(fig, width="stretch")
+                    fig = create_smooth_line_chart(eq_data["timestamp"], val, f"OCP GB1 Temp #{i} — Tag: OCP-M5-GB1-TMP-{i:02d} (°C)", "#FF9100", 190)
+                    target.plotly_chart(fig, width="stretch", key=f"p_m5ocpt1_{i}")
 
                 st.markdown("##### HLC Company — Gearbox 1 Vibration Sensors (3 Channels)")
                 c_h1, c_h2, c_h3 = st.columns(3)
                 cols_hlc = [c_h1, c_h2, c_h3]
                 for i in range(1, 4):
                     val = eq_data[f"m5_hlc_gb1_vib_{i}"] if f"m5_hlc_gb1_vib_{i}" in eq_data.columns else [2.6]*len(eq_data)
-                    fig = go.Figure(go.Scatter(x=eq_data["timestamp"], y=val, line=dict(color="#76FF03", width=2)))
-                    fig.update_layout(height=190, template="plotly_dark", title=f"HLC GB1 Vib #{i} — Tag: HLC-M5-GB1-VIB-{i:02d} (mm/s)")
-                    cols_hlc[i-1].plotly_chart(fig, width="stretch")
+                    fig = create_smooth_line_chart(eq_data["timestamp"], val, f"HLC GB1 Vib #{i} — Tag: HLC-M5-GB1-VIB-{i:02d} (mm/s)", "#76FF03", 190)
+                    cols_hlc[i-1].plotly_chart(fig, width="stretch", key=f"p_m5hlcv1_{i}")
 
             with st.expander("⚙️ Gearbox Section Two — 6 Channels (HLC Temperature)", expanded=True):
                 st.markdown("##### HLC Company — Gearbox 2 Temperature Sensors (6 Channels)")
@@ -330,21 +363,18 @@ def render_live_drilldown_charts(selected_mill, selected_eq):
                 for i in range(1, 7):
                     target = cg2_1 if i % 2 != 0 else cg2_2
                     val = eq_data[f"m5_hlc_gb2_tmp_{i}"] if f"m5_hlc_gb2_tmp_{i}" in eq_data.columns else [68.0]*len(eq_data)
-                    fig = go.Figure(go.Scatter(x=eq_data["timestamp"], y=val, line=dict(color="#FF1744", width=2)))
-                    fig.update_layout(height=190, template="plotly_dark", title=f"HLC GB2 Temp #{i} — Tag: HLC-M5-GB2-TMP-{i:02d} (°C)")
-                    target.plotly_chart(fig, width="stretch")
+                    fig = create_smooth_line_chart(eq_data["timestamp"], val, f"HLC GB2 Temp #{i} — Tag: HLC-M5-GB2-TMP-{i:02d} (°C)", "#FF1744", 190)
+                    target.plotly_chart(fig, width="stretch", key=f"p_m5hlct2_{i}")
 
             with st.expander("⚡ Motor Subsystem — 2 Channels (HLC Temperature & Current)", expanded=True):
                 cm1, cm2 = st.columns(2)
                 t_m5 = eq_data["m5_hlc_mtr_tmp_1"] if "m5_hlc_mtr_tmp_1" in eq_data.columns else [64.5]*len(eq_data)
-                fig_mt = go.Figure(go.Scatter(x=eq_data["timestamp"], y=t_m5, line=dict(color="#D500F9", width=2)))
-                fig_mt.update_layout(height=200, template="plotly_dark", title="HLC Motor Temp #1 — Tag: HLC-M5-MTR-TMP-01 (°C)")
-                cm1.plotly_chart(fig_mt, width="stretch")
+                fig_mt = create_smooth_line_chart(eq_data["timestamp"], t_m5, "HLC Motor Temp #1 — Tag: HLC-M5-MTR-TMP-01 (°C)", "#D500F9")
+                cm1.plotly_chart(fig_mt, width="stretch", key="p_m5mt_1")
 
                 cur_m5 = eq_data["m5_hlc_mtr_cur_1"] if "m5_hlc_mtr_cur_1" in eq_data.columns else [185.0]*len(eq_data)
-                fig_mc = go.Figure(go.Scatter(x=eq_data["timestamp"], y=cur_m5, line=dict(color="#651FFF", width=2)))
-                fig_mc.update_layout(height=200, template="plotly_dark", title="HLC Motor Current #1 — Tag: HLC-M5-MTR-CUR-01 (Amperes)")
-                cm2.plotly_chart(fig_mc, width="stretch")
+                fig_mc = create_smooth_line_chart(eq_data["timestamp"], cur_m5, "HLC Motor Current #1 — Tag: HLC-M5-MTR-CUR-01 (Amperes)", "#651FFF")
+                cm2.plotly_chart(fig_mc, width="stretch", key="p_m5mc_1")
 
         elif selected_mill == "Mill 6" and selected_eq == "Main Filter Fan":
             v1 = eq_data["vibration_mm_s"] if "vibration_mm_s" in eq_data.columns else [2.4]*len(eq_data)
@@ -356,26 +386,21 @@ def render_live_drilldown_charts(selected_mill, selected_eq):
             st.markdown("##### 🌀 Mechanical Vibration Transmitters")
             c1, c2 = st.columns(2)
             with c1:
-                fig1 = go.Figure(go.Scatter(x=eq_data["timestamp"], y=v1, line=dict(color="#00D2FF", width=2)))
-                fig1.update_layout(height=220, template="plotly_dark", title="Vibration Sensor 1 — Inlet Housing (mm/s)")
-                st.plotly_chart(fig1, width="stretch")
+                fig1 = create_smooth_line_chart(eq_data["timestamp"], v1, "Vibration Sensor 1 — Inlet Housing (mm/s)", "#00D2FF", 220)
+                st.plotly_chart(fig1, width="stretch", key="p_m6mff_v1")
             with c2:
-                fig2 = go.Figure(go.Scatter(x=eq_data["timestamp"], y=v2, line=dict(color="#33FF57", width=2)))
-                fig2.update_layout(height=220, template="plotly_dark", title="Vibration Sensor 2 — Outlet Housing (mm/s)")
-                st.plotly_chart(fig2, width="stretch")
+                fig2 = create_smooth_line_chart(eq_data["timestamp"], v2, "Vibration Sensor 2 — Outlet Housing (mm/s)", "#33FF57", 220)
+                st.plotly_chart(fig2, width="stretch", key="p_m6mff_v2")
 
             st.markdown("##### ⚡ Motor Driver Electrical Telemetry")
-            fig3 = go.Figure(go.Scatter(x=eq_data["timestamp"], y=power, line=dict(color="#FFD700", width=2)))
-            fig3.update_layout(height=220, template="plotly_dark", title="Motor Driver — Electrical Power (kW)")
-            st.plotly_chart(fig3, width="stretch")
+            fig3 = create_smooth_line_chart(eq_data["timestamp"], power, "Motor Driver — Electrical Power (kW)", "#FFD700", 220)
+            st.plotly_chart(fig3, width="stretch", key="p_m6mff_p")
 
-            fig4 = go.Figure(go.Scatter(x=eq_data["timestamp"], y=speed, line=dict(color="#FF00FF", width=2)))
-            fig4.update_layout(height=220, template="plotly_dark", title="Motor Driver — Motor Speed (RPM)")
-            st.plotly_chart(fig4, width="stretch")
+            fig4 = create_smooth_line_chart(eq_data["timestamp"], speed, "Motor Driver — Motor Speed (RPM)", "#FF00FF", 220)
+            st.plotly_chart(fig4, width="stretch", key="p_m6mff_s")
 
-            fig5 = go.Figure(go.Scatter(x=eq_data["timestamp"], y=m_temp, line=dict(color="#FF4500", width=2)))
-            fig5.update_layout(height=220, template="plotly_dark", title="Motor Driver — Motor Temperature (°C)")
-            st.plotly_chart(fig5, width="stretch")
+            fig5 = create_smooth_line_chart(eq_data["timestamp"], m_temp, "Motor Driver — Motor Temperature (°C)", "#FF4500", 220)
+            st.plotly_chart(fig5, width="stretch", key="p_m6mff_t")
 
         elif selected_mill == "Mill 5" and selected_eq == "Separator Filter Fan":
             v1 = eq_data["vibration_mm_s"] if "vibration_mm_s" in eq_data.columns else [2.4]*len(eq_data)
@@ -386,23 +411,18 @@ def render_live_drilldown_charts(selected_mill, selected_eq):
 
             c1, c2 = st.columns(2)
             with c1:
-                fig1 = go.Figure(go.Scatter(x=eq_data["timestamp"], y=v1, line=dict(color="#00D2FF", width=2)))
-                fig1.update_layout(height=220, template="plotly_dark", title="Vibration Sensor 1 — Fan End (mm/s)")
-                st.plotly_chart(fig1, width="stretch")
-                fig3 = go.Figure(go.Scatter(x=eq_data["timestamp"], y=t1, line=dict(color="#FF8C00", width=2)))
-                fig3.update_layout(height=220, template="plotly_dark", title="Temperature Sensor 1 — Inlet Bearing (°C)")
-                st.plotly_chart(fig3, width="stretch")
+                fig1 = create_smooth_line_chart(eq_data["timestamp"], v1, "Vibration Sensor 1 — Fan End (mm/s)", "#00D2FF", 220)
+                st.plotly_chart(fig1, width="stretch", key="p_m5sff_v1")
+                fig3 = create_smooth_line_chart(eq_data["timestamp"], t1, "Temperature Sensor 1 — Inlet Bearing (°C)", "#FF8C00", 220)
+                st.plotly_chart(fig3, width="stretch", key="p_m5sff_t1")
             with c2:
-                fig2 = go.Figure(go.Scatter(x=eq_data["timestamp"], y=v2, line=dict(color="#33FF57", width=2)))
-                fig2.update_layout(height=220, template="plotly_dark", title="Vibration Sensor 2 — Motor End (mm/s)")
-                st.plotly_chart(fig2, width="stretch")
-                fig4 = go.Figure(go.Scatter(x=eq_data["timestamp"], y=t2, line=dict(color="#FF33A8", width=2)))
-                fig4.update_layout(height=220, template="plotly_dark", title="Temperature Sensor 2 — Outlet / Housing (°C)")
-                st.plotly_chart(fig4, width="stretch")
+                fig2 = create_smooth_line_chart(eq_data["timestamp"], v2, "Vibration Sensor 2 — Motor End (mm/s)", "#33FF57", 220)
+                st.plotly_chart(fig2, width="stretch", key="p_m5sff_v2")
+                fig4 = create_smooth_line_chart(eq_data["timestamp"], t2, "Temperature Sensor 2 — Outlet / Housing (°C)", "#FF33A8", 220)
+                st.plotly_chart(fig4, width="stretch", key="p_m5sff_t2")
 
-            fig5 = go.Figure(go.Scatter(x=eq_data["timestamp"], y=curr, line=dict(color="#D500F9", width=2)))
-            fig5.update_layout(height=220, template="plotly_dark", title="Motor Current Sensor (Amperes)")
-            st.plotly_chart(fig5, width="stretch")
+            fig5 = create_smooth_line_chart(eq_data["timestamp"], curr, "Motor Current Sensor (Amperes)", "#D500F9", 220)
+            st.plotly_chart(fig5, width="stretch", key="p_m5sff_c")
 
         elif selected_mill == "Mill 6" and selected_eq in ["Dynamic Separator", "Separator Filter Fan"]:
             v1 = eq_data["vibration_mm_s"] if "vibration_mm_s" in eq_data.columns else [2.4]*len(eq_data)
@@ -412,45 +432,36 @@ def render_live_drilldown_charts(selected_mill, selected_eq):
 
             c1, c2 = st.columns(2)
             with c1:
-                fig1 = go.Figure(go.Scatter(x=eq_data["timestamp"], y=v1, line=dict(color="#00D2FF", width=2)))
-                fig1.update_layout(height=225, template="plotly_dark", title="Vibration Sensor 1 — Drive/Fan End (mm/s)")
-                st.plotly_chart(fig1, width="stretch")
-                fig3 = go.Figure(go.Scatter(x=eq_data["timestamp"], y=t1, line=dict(color="#FF8C00", width=2)))
-                fig3.update_layout(height=225, template="plotly_dark", title="Temperature Sensor 1 — Bearing Housing (°C)")
-                st.plotly_chart(fig3, width="stretch")
+                fig1 = create_smooth_line_chart(eq_data["timestamp"], v1, "Vibration Sensor 1 — Drive/Fan End (mm/s)", "#00D2FF", 225)
+                st.plotly_chart(fig1, width="stretch", key=f"p_m6s_{selected_eq}_v1")
+                fig3 = create_smooth_line_chart(eq_data["timestamp"], t1, "Temperature Sensor 1 — Bearing Housing (°C)", "#FF8C00", 225)
+                st.plotly_chart(fig3, width="stretch", key=f"p_m6s_{selected_eq}_t1")
             with c2:
-                fig2 = go.Figure(go.Scatter(x=eq_data["timestamp"], y=v2, line=dict(color="#33FF57", width=2)))
-                fig2.update_layout(height=225, template="plotly_dark", title="Vibration Sensor 2 — Motor/NDE (mm/s)")
-                st.plotly_chart(fig2, width="stretch")
-                fig4 = go.Figure(go.Scatter(x=eq_data["timestamp"], y=t2, line=dict(color="#FF33A8", width=2)))
-                fig4.update_layout(height=225, template="plotly_dark", title="Temperature Sensor 2 — Motor Winding/Outlet (°C)")
-                st.plotly_chart(fig4, width="stretch")
+                fig2 = create_smooth_line_chart(eq_data["timestamp"], v2, "Vibration Sensor 2 — Motor/NDE (mm/s)", "#33FF57", 225)
+                st.plotly_chart(fig2, width="stretch", key=f"p_m6s_{selected_eq}_v2")
+                fig4 = create_smooth_line_chart(eq_data["timestamp"], t2, "Temperature Sensor 2 — Motor Winding/Outlet (°C)", "#FF33A8", 225)
+                st.plotly_chart(fig4, width="stretch", key=f"p_m6s_{selected_eq}_t2")
 
         elif selected_mill == "Mill 5" and selected_eq == "Dynamic Separator":
             p_val = eq_data["oil_pressure_bar"] if "oil_pressure_bar" in eq_data.columns else [4.2]*len(eq_data)
             t_val = eq_data["temperature_c"] if "temperature_c" in eq_data.columns else [61.5]*len(eq_data)
             i_val = eq_data["motor_current_a"] if "motor_current_a" in eq_data.columns else [145.0]*len(eq_data)
 
-            fig_p = go.Figure(go.Scatter(x=eq_data["timestamp"], y=p_val, line=dict(color="#00E5FF", width=2)))
-            fig_p.update_layout(height=220, template="plotly_dark", title="Oil Pressure Sensor (bar)")
-            st.plotly_chart(fig_p, width="stretch")
+            fig_p = create_smooth_line_chart(eq_data["timestamp"], p_val, "Oil Pressure Sensor (bar)", "#00E5FF", 220)
+            st.plotly_chart(fig_p, width="stretch", key="p_m5ds_p")
 
-            fig_t = go.Figure(go.Scatter(x=eq_data["timestamp"], y=t_val, line=dict(color="#FF9100", width=2)))
-            fig_t.update_layout(height=220, template="plotly_dark", title="Bearing Temperature Sensor (°C)")
-            st.plotly_chart(fig_t, width="stretch")
+            fig_t = create_smooth_line_chart(eq_data["timestamp"], t_val, "Bearing Temperature Sensor (°C)", "#FF9100", 220)
+            st.plotly_chart(fig_t, width="stretch", key="p_m5ds_t")
 
-            fig_i = go.Figure(go.Scatter(x=eq_data["timestamp"], y=i_val, line=dict(color="#D500F9", width=2)))
-            fig_i.update_layout(height=220, template="plotly_dark", title="Motor Current Sensor (Amperes)")
-            st.plotly_chart(fig_i, width="stretch")
+            fig_i = create_smooth_line_chart(eq_data["timestamp"], i_val, "Motor Current Sensor (Amperes)", "#D500F9", 220)
+            st.plotly_chart(fig_i, width="stretch", key="p_m5ds_i")
 
         else:
             v_val = eq_data["vibration_mm_s"] if "vibration_mm_s" in eq_data.columns else [2.5]*len(eq_data)
             t_val = eq_data["temperature_c"] if "temperature_c" in eq_data.columns else [55.0]*len(eq_data)
 
-            fig_v = go.Figure(go.Scatter(x=eq_data["timestamp"], y=v_val, line=dict(color="#00D2FF", width=2)))
-            fig_v.update_layout(height=225, template="plotly_dark", title="Vibration Signal RMS (mm/s)")
-            st.plotly_chart(fig_v, width="stretch")
+            fig_v = create_smooth_line_chart(eq_data["timestamp"], v_val, "Vibration Signal RMS (mm/s)", "#00D2FF", 225)
+            st.plotly_chart(fig_v, width="stretch", key="p_gen_v")
 
-            fig_t = go.Figure(go.Scatter(x=eq_data["timestamp"], y=t_val, line=dict(color="#FF8C00", width=2)))
-            fig_t.update_layout(height=225, template="plotly_dark", title="Thermal Signal (°C)")
-            st.plotly_chart(fig_t, width="stretch")
+            fig_t = create_smooth_line_chart(eq_data["timestamp"], t_val, "Thermal Signal (°C)", "#FF8C00", 225)
+            st.plotly_chart(fig_t, width="stretch", key="p_gen_t")
