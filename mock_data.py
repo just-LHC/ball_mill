@@ -59,6 +59,7 @@ class PlantDataEngine:
                         "motor_temp_c": round(max(0, np.random.normal(68.0, 1.2)), 1)
                     }
 
+                    # Populate Mill 6 Main Control Channels (16 total)
                     if mill == "Mill 6" and eq == "Mill Main Control":
                         for idx in range(1, 11):
                             record[f"ocp_gb_vib_{idx}"] = round(max(0, np.random.normal(2.8 + idx*0.1, 0.3)), 2)
@@ -67,6 +68,7 @@ class PlantDataEngine:
                             record[f"ocp_mtr_vib_{idx}"] = round(max(0, np.random.normal(2.1, 0.2)), 2)
                             record[f"hlc_mtr_tmp_{idx}"] = round(np.random.normal(62.0 + idx, 1.1), 1)
 
+                    # Populate Mill 5 Main Control Channels (31 total)
                     elif mill == "Mill 5" and eq == "Mill Main Control":
                         for idx in range(1, 11):
                             record[f"m5_ocp_gb1_vib_{idx}"] = round(max(0, np.random.normal(3.0 + idx*0.05, 0.3)), 2)
@@ -77,6 +79,24 @@ class PlantDataEngine:
                             record[f"m5_hlc_gb2_tmp_{idx}"] = round(np.random.normal(68.0 + idx*0.5, 1.2), 1)
                         record["m5_hlc_mtr_tmp_1"] = round(np.random.normal(64.5, 1.0), 1)
                         record["m5_hlc_mtr_cur_1"] = round(max(0, np.random.normal(185.0, 4.0)), 1)
+
+                    # Populate Mill 4 Main Control Channels (11 total)
+                    elif mill == "Mill 4" and eq == "Mill Main Control":
+                        for idx in range(1, 3):
+                            record[f"m4_gb_vib_{idx}"] = round(max(0, np.random.normal(2.5 + idx*0.1, 0.3)), 2)
+                        for idx in range(1, 4):
+                            record[f"m4_gb_tmp_{idx}"] = round(np.random.normal(61.0 + idx*0.5, 1.0), 1)
+                        for idx in range(1, 6):
+                            record[f"m4_mtr_tmp_{idx}"] = round(np.random.normal(63.0 + idx*0.6, 1.1), 1)
+                        record["m4_mtr_cur_1"] = round(max(0, np.random.normal(160.0, 3.5)), 1)
+
+                    # Populate Mill 1 (White Cement) Main Control Channels (6 total)
+                    elif mill == "Mill 1 (White Cement)" and eq == "Mill Main Control":
+                        for idx in range(1, 3):
+                            record[f"m1_gb_vib_{idx}"] = round(max(0, np.random.normal(2.3 + idx*0.1, 0.25)), 2)
+                        for idx in range(1, 4):
+                            record[f"m1_gb_tmp_{idx}"] = round(np.random.normal(59.0 + idx*0.5, 0.9), 1)
+                        record["m1_mtr_cur_1"] = round(max(0, np.random.normal(140.0, 3.0)), 1)
 
                     data.append(record)
         return pd.DataFrame(data)
@@ -113,8 +133,9 @@ class PlantDataEngine:
                     "motor_temp_c": round(max(0, np.random.normal(68.0, 1.2)), 1)
                 }
 
+                mult = 2.5 if is_target and trigger_critical else 1.0
+
                 if mill == "Mill 6" and eq == "Mill Main Control":
-                    mult = 2.5 if is_target and trigger_critical else 1.0
                     for idx in range(1, 11):
                         record[f"ocp_gb_vib_{idx}"] = round(max(0, np.random.normal((2.8 + idx*0.1)*mult, 0.3)), 2)
                     for idx in range(1, 3):
@@ -123,7 +144,6 @@ class PlantDataEngine:
                         record[f"hlc_mtr_tmp_{idx}"] = round(np.random.normal((62.0 + idx)*mult, 1.1), 1)
 
                 elif mill == "Mill 5" and eq == "Mill Main Control":
-                    mult = 2.5 if is_target and trigger_critical else 1.0
                     for idx in range(1, 11):
                         record[f"m5_ocp_gb1_vib_{idx}"] = round(max(0, np.random.normal((3.0 + idx*0.05)*mult, 0.3)), 2)
                         record[f"m5_ocp_gb1_tmp_{idx}"] = round(np.random.normal((65.0 + idx*0.8)*mult, 1.0), 1)
@@ -133,6 +153,22 @@ class PlantDataEngine:
                         record[f"m5_hlc_gb2_tmp_{idx}"] = round(np.random.normal((68.0 + idx*0.5)*mult, 1.2), 1)
                     record["m5_hlc_mtr_tmp_1"] = round(np.random.normal(64.5*mult, 1.0), 1)
                     record["m5_hlc_mtr_cur_1"] = round(max(0, np.random.normal(185.0*mult, 4.0)), 1)
+
+                elif mill == "Mill 4" and eq == "Mill Main Control":
+                    for idx in range(1, 3):
+                        record[f"m4_gb_vib_{idx}"] = round(max(0, np.random.normal((2.5 + idx*0.1)*mult, 0.3)), 2)
+                    for idx in range(1, 4):
+                        record[f"m4_gb_tmp_{idx}"] = round(np.random.normal((61.0 + idx*0.5)*mult, 1.0), 1)
+                    for idx in range(1, 6):
+                        record[f"m4_mtr_tmp_{idx}"] = round(np.random.normal((63.0 + idx*0.6)*mult, 1.1), 1)
+                    record["m4_mtr_cur_1"] = round(max(0, np.random.normal(160.0*mult, 3.5)), 1)
+
+                elif mill == "Mill 1 (White Cement)" and eq == "Mill Main Control":
+                    for idx in range(1, 3):
+                        record[f"m1_gb_vib_{idx}"] = round(max(0, np.random.normal((2.3 + idx*0.1)*mult, 0.25)), 2)
+                    for idx in range(1, 4):
+                        record[f"m1_gb_tmp_{idx}"] = round(np.random.normal((59.0 + idx*0.5)*mult, 0.9), 1)
+                    record["m1_mtr_cur_1"] = round(max(0, np.random.normal(140.0*mult, 3.0)), 1)
 
                 new_rows.append(record)
                 self._evaluate_and_log_alert(record)
