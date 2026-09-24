@@ -44,24 +44,43 @@ class PlantDataEngine:
                 for i in range(num_records):
                     timestamp = now - timedelta(minutes=(num_records - i))
                     
-                    vib1 = np.random.normal(2.4, 0.3)
-                    vib2 = np.random.normal(2.6, 0.3)
-                    temp1 = np.random.normal(58.0, 1.0)
-                    temp2 = np.random.normal(60.0, 1.0)
-                    oil_press = np.random.normal(4.2, 0.15)
-                    m5_curr = np.random.normal(145.0, 3.0)
-
-                    data.append({
+                    record = {
                         "timestamp": timestamp,
                         "mill": mill,
                         "equipment": eq,
-                        "vibration_mm_s": round(max(0, vib1), 2),
-                        "vibration_2_mm_s": round(max(0, vib2), 2),
-                        "temperature_c": round(temp1, 1),
-                        "temperature_2_c": round(temp2, 1),
-                        "oil_pressure_bar": round(max(0, oil_press), 2),
-                        "motor_current_a": round(max(0, m5_curr), 1)
-                    })
+                        "vibration_mm_s": round(max(0, np.random.normal(2.5, 0.3)), 2),
+                        "vibration_2_mm_s": round(max(0, np.random.normal(2.6, 0.3)), 2),
+                        "temperature_c": round(np.random.normal(58.0, 1.0), 1),
+                        "temperature_2_c": round(np.random.normal(60.0, 1.0), 1),
+                        "oil_pressure_bar": round(max(0, np.random.normal(4.2, 0.15)), 2),
+                        "motor_current_a": round(max(0, np.random.normal(145.0, 3.0)), 1),
+                        "electrical_power_kw": round(max(0, np.random.normal(320.0, 5.0)), 1),
+                        "motor_speed_rpm": round(max(0, np.random.normal(980.0, 10.0)), 0),
+                        "motor_temp_c": round(max(0, np.random.normal(68.0, 1.2)), 1)
+                    }
+
+                    # Populate Mill 6 Main Control Channels (16 total)
+                    if mill == "Mill 6" and eq == "Mill Main Control":
+                        for idx in range(1, 11):
+                            record[f"ocp_gb_vib_{idx}"] = round(max(0, np.random.normal(2.8 + idx*0.1, 0.3)), 2)
+                        for idx in range(1, 3):
+                            record[f"hlc_gb_vib_{idx}"] = round(max(0, np.random.normal(2.4, 0.25)), 2)
+                            record[f"ocp_mtr_vib_{idx}"] = round(max(0, np.random.normal(2.1, 0.2)), 2)
+                            record[f"hlc_mtr_tmp_{idx}"] = round(np.random.normal(62.0 + idx, 1.1), 1)
+
+                    # Populate Mill 5 Main Control Channels (31 total)
+                    elif mill == "Mill 5" and eq == "Mill Main Control":
+                        for idx in range(1, 11):
+                            record[f"m5_ocp_gb1_vib_{idx}"] = round(max(0, np.random.normal(3.0 + idx*0.05, 0.3)), 2)
+                            record[f"m5_ocp_gb1_tmp_{idx}"] = round(np.random.normal(65.0 + idx*0.8, 1.0), 1)
+                        for idx in range(1, 4):
+                            record[f"m5_hlc_gb1_vib_{idx}"] = round(max(0, np.random.normal(2.6, 0.2)), 2)
+                        for idx in range(1, 7):
+                            record[f"m5_hlc_gb2_tmp_{idx}"] = round(np.random.normal(68.0 + idx*0.5, 1.2), 1)
+                        record["m5_hlc_mtr_tmp_1"] = round(np.random.normal(64.5, 1.0), 1)
+                        record["m5_hlc_mtr_cur_1"] = round(max(0, np.random.normal(185.0, 4.0)), 1)
+
+                    data.append(record)
         return pd.DataFrame(data)
 
     def tick_live_telemetry(self):
@@ -78,30 +97,49 @@ class PlantDataEngine:
             for eq in eq_list:
                 is_target = (trigger_warning or trigger_critical) and mill == target_mill and eq == target_eq
                 
-                v1_base, v2_base = (7.8, 8.1) if is_target and trigger_critical else ((5.2, 5.5) if is_target else (2.4, 2.6))
-                t1_base, t2_base = (93.0, 95.0) if is_target and trigger_critical else ((78.0, 81.0) if is_target else (58.0, 60.0))
-                
-                vib1 = np.random.normal(v1_base, 0.3)
-                vib2 = np.random.normal(v2_base, 0.3)
-                temp1 = np.random.normal(t1_base, 1.0)
-                temp2 = np.random.normal(t2_base, 1.0)
+                vib1 = np.random.normal(7.8, 0.3) if is_target and trigger_critical else np.random.normal(2.4, 0.3)
+                temp1 = np.random.normal(93.0, 1.0) if is_target and trigger_critical else np.random.normal(58.0, 1.0)
 
-                oil_press = np.random.normal(2.1, 0.1) if is_target and trigger_critical else np.random.normal(4.2, 0.15)
-                m5_curr = np.random.normal(210.0, 5.0) if is_target and trigger_critical else np.random.normal(145.0, 3.0)
-
-                row = {
+                record = {
                     "timestamp": now,
                     "mill": mill,
                     "equipment": eq,
                     "vibration_mm_s": round(max(0, vib1), 2),
-                    "vibration_2_mm_s": round(max(0, vib2), 2),
+                    "vibration_2_mm_s": round(max(0, np.random.normal(2.6, 0.3)), 2),
                     "temperature_c": round(temp1, 1),
-                    "temperature_2_c": round(temp2, 1),
-                    "oil_pressure_bar": round(max(0, oil_press), 2),
-                    "motor_current_a": round(max(0, m5_curr), 1)
+                    "temperature_2_c": round(np.random.normal(60.0, 1.0), 1),
+                    "oil_pressure_bar": round(max(0, np.random.normal(4.2, 0.15)), 2),
+                    "motor_current_a": round(max(0, np.random.normal(145.0, 3.0)), 1),
+                    "electrical_power_kw": round(max(0, np.random.normal(320.0, 5.0)), 1),
+                    "motor_speed_rpm": round(max(0, np.random.normal(980.0, 10.0)), 0),
+                    "motor_temp_c": round(max(0, np.random.normal(68.0, 1.2)), 1)
                 }
-                new_rows.append(row)
-                self._evaluate_and_log_alert(row)
+
+                # Live Tick Mill 6 Main Control Channels
+                if mill == "Mill 6" and eq == "Mill Main Control":
+                    mult = 2.5 if is_target and trigger_critical else 1.0
+                    for idx in range(1, 11):
+                        record[f"ocp_gb_vib_{idx}"] = round(max(0, np.random.normal((2.8 + idx*0.1)*mult, 0.3)), 2)
+                    for idx in range(1, 3):
+                        record[f"hlc_gb_vib_{idx}"] = round(max(0, np.random.normal(2.4*mult, 0.25)), 2)
+                        record[f"ocp_mtr_vib_{idx}"] = round(max(0, np.random.normal(2.1*mult, 0.2)), 2)
+                        record[f"hlc_mtr_tmp_{idx}"] = round(np.random.normal((62.0 + idx)*mult, 1.1), 1)
+
+                # Live Tick Mill 5 Main Control Channels
+                elif mill == "Mill 5" and eq == "Mill Main Control":
+                    mult = 2.5 if is_target and trigger_critical else 1.0
+                    for idx in range(1, 11):
+                        record[f"m5_ocp_gb1_vib_{idx}"] = round(max(0, np.random.normal((3.0 + idx*0.05)*mult, 0.3)), 2)
+                        record[f"m5_ocp_gb1_tmp_{idx}"] = round(np.random.normal((65.0 + idx*0.8)*mult, 1.0), 1)
+                    for idx in range(1, 4):
+                        record[f"m5_hlc_gb1_vib_{idx}"] = round(max(0, np.random.normal(2.6*mult, 0.2)), 2)
+                    for idx in range(1, 7):
+                        record[f"m5_hlc_gb2_tmp_{idx}"] = round(np.random.normal((68.0 + idx*0.5)*mult, 1.2), 1)
+                    record["m5_hlc_mtr_tmp_1"] = round(np.random.normal(64.5*mult, 1.0), 1)
+                    record["m5_hlc_mtr_cur_1"] = round(max(0, np.random.normal(185.0*mult, 4.0)), 1)
+
+                new_rows.append(record)
+                self._evaluate_and_log_alert(record)
                 
         new_df = pd.DataFrame(new_rows)
         with self._lock:
@@ -111,8 +149,8 @@ class PlantDataEngine:
         mill = latest_reading["mill"]
         eq = latest_reading["equipment"]
         timestamp = latest_reading["timestamp"]
-        vib = max(latest_reading["vibration_mm_s"], latest_reading["vibration_2_mm_s"])
-        temp = max(latest_reading["temperature_c"], latest_reading["temperature_2_c"])
+        vib = latest_reading["vibration_mm_s"]
+        temp = latest_reading["temperature_c"]
         
         diag = analyze_telemetry_diagnostics(mill, eq, vib, temp)
         
