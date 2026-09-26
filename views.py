@@ -13,6 +13,110 @@ from db_engine import fetch_all_alerts
 
 shared_engine = get_shared_plant_engine()
 
+# Mapping of equipment sensor counts, tags, and description metadata
+EQUIPMENT_METADATA_MAP = {
+    "Mill 6": {
+        "Mill Main Control": {
+            "total_sensors": 16,
+            "sensor_summary": "12 Gearbox Vibration Channels, 2 Motor Vibration Channels, 2 Motor Temperature Channels",
+            "tags": [
+                "OCP-GB-VIB-01 to 10 (OCP Gearbox Vibration 1-10)",
+                "HLC-GB-VIB-01 to 02 (HLC Gearbox Vibration 1-2)",
+                "OCP-MTR-VIB-01 to 02 (OCP Motor Vibration 1-2)",
+                "HLC-MTR-TMP-01 to 02 (HLC Motor Temperature 1-2)"
+            ]
+        },
+        "Dynamic Separator": {
+            "total_sensors": 4,
+            "sensor_summary": "2 Vibration Transmitters, 2 Temperature RTDs",
+            "tags": [
+                "611-SEP-01-VIB-1 (Drive End Vibration)",
+                "611-SEP-01-VIB-2 (Non-Drive End Vibration)",
+                "611-SEP-01-TMP-1 (Upper Bearing Temp)",
+                "611-SEP-01-TMP-2 (Lower Bearing Temp)"
+            ]
+        },
+        "Separator Filter Fan": {
+            "total_sensors": 4,
+            "sensor_summary": "2 Vibration Transmitters, 2 Temperature RTDs",
+            "tags": [
+                "611-FNS-VIB-1 (Fan Side Vibration)",
+                "611-FNS-VIB-2 (Motor Side Vibration)",
+                "611-FNS-TMP-1 (Bearing Temperature)",
+                "611-FNS-TMP-2 (Winding Temperature)"
+            ]
+        },
+        "Main Filter Fan": {
+            "total_sensors": 5,
+            "sensor_summary": "2 Vibration Sensors, 1 Power Meter, 1 Tachometer, 1 Temperature RTD",
+            "tags": [
+                "611-FNM-VIB-1 (Inlet Housing Vibration)",
+                "611-FNM-VIB-2 (Outlet Housing Vibration)",
+                "611-FNM-PWR-1 (Electrical Power Meter - kW)",
+                "611-FNM-SPD-1 (Motor Speed Tachometer - RPM)",
+                "611-FNM-TMP-1 (Motor Driver Temp - °C)"
+            ]
+        }
+    },
+    "Mill 5": {
+        "Mill Main Control": {
+            "total_sensors": 31,
+            "sensor_summary": "13 Gearbox Vibration Channels, 16 Gearbox Temperature Channels, 1 Motor Temp, 1 Motor Current",
+            "tags": [
+                "OCP-M5-GB1-VIB-01 to 10 (OCP GB1 Vib Channels)",
+                "OCP-M5-GB1-TMP-01 to 10 (OCP GB1 Temp Channels)",
+                "HLC-M5-GB1-VIB-01 to 03 (HLC GB1 Vib Channels)",
+                "HLC-M5-GB2-TMP-01 to 06 (HLC GB2 Temp Channels)",
+                "HLC-M5-MTR-TMP-01 (Motor Bearing Temperature)",
+                "HLC-M5-MTR-CUR-01 (Motor Current Amperage)"
+            ]
+        },
+        "Dynamic Separator": {
+            "total_sensors": 3,
+            "sensor_summary": "1 Oil Pressure Transmitter, 1 Temperature RTD, 1 Current Transmitter",
+            "tags": [
+                "M5-SEP-PRS-01 (Lubrication Oil Pressure - bar)",
+                "M5-SEP-TMP-01 (Separator Bearing Temp - °C)",
+                "M5-SEP-CUR-01 (Motor Operating Current - A)"
+            ]
+        },
+        "Separator Filter Fan": {
+            "total_sensors": 5,
+            "sensor_summary": "2 Vibration Transmitters, 2 Temperature RTDs, 1 Current Sensor",
+            "tags": [
+                "M5-SFF-VIB-1 (Fan End Vibration - mm/s)",
+                "M5-SFF-VIB-2 (Motor End Vibration - mm/s)",
+                "M5-SFF-TMP-1 (Inlet Bearing Temp - °C)",
+                "M5-SFF-TMP-2 (Outlet Housing Temp - °C)",
+                "M5-SFF-CUR-1 (Motor Current Draw - A)"
+            ]
+        }
+    },
+    "Mill 4": {
+        "Mill Main Control": {
+            "total_sensors": 11,
+            "sensor_summary": "2 Gearbox Vibration Channels, 3 Gearbox Temp Channels, 5 Motor Temp Channels, 1 Current Draw",
+            "tags": [
+                "M4-GB-VIB-01 to 02 (Gearbox Vibration Sensors)",
+                "M4-GB-TMP-01 to 03 (Gearbox Temperature RTDs)",
+                "M4-MTR-TMP-01 to 05 (Motor Winding/Bearing Temps)",
+                "M4-MTR-CUR-01 (Motor Driver Current Draw)"
+            ]
+        }
+    },
+    "Mill 1 (White Cement)": {
+        "Mill Main Control": {
+            "total_sensors": 6,
+            "sensor_summary": "2 Gearbox Vibration Channels, 3 Gearbox Temp Channels, 1 Current Draw",
+            "tags": [
+                "M1-GB-VIB-01 to 02 (Gearbox Vibration Sensors)",
+                "M1-GB-TMP-01 to 03 (Gearbox Temperature RTDs)",
+                "M1-MTR-CUR-01 (Motor Current Sensor)"
+            ]
+        }
+    }
+}
+
 def inject_silent_stream_css():
     """Injects CSS rules to lock container bounds and eliminate visual layout jitter during live SCADA updates."""
     st.markdown(
@@ -38,6 +142,13 @@ def inject_silent_stream_css():
             * {
                 transition: background-color 0.2s ease, color 0.2s ease;
             }
+            .equipment-info-card {
+                background-color: #1A1D24;
+                padding: 15px;
+                border-radius: 8px;
+                border: 1px solid #2E3440;
+                margin-bottom: 15px;
+            }
         </style>
         """,
         unsafe_allow_html=True
@@ -62,6 +173,39 @@ def create_smooth_line_chart(x_data, y_data, title, color="#00D2FF", height=200)
         yaxis=dict(showgrid=True, gridcolor="#2E3440", zeroline=False)
     )
     return fig
+
+def render_equipment_header_info(selected_mill: str, selected_eq: str):
+    """Renders equipment photo placeholder and telemetry sensor breakdown prior to charts."""
+    info = EQUIPMENT_METADATA_MAP.get(selected_mill, {}).get(selected_eq, {
+        "total_sensors": "N/A",
+        "sensor_summary": "Standard Telemetry Package",
+        "tags": ["Vibration Signal (RMS)", "Temperature Signal (°C)"]
+    })
+
+    img_col, details_col = st.columns([1.5, 2.5])
+
+    with img_col:
+        try:
+            st.image("photo/lafargeholcim_cte_d_ivoire_logo.jfif", caption=f"{selected_mill} - {selected_eq}", use_container_width=True)
+        except Exception:
+            st.image("https://upload.wikimedia.org/wikipedia/commons/thumb/8/87/Holcim_logo.svg/1200px-Holcim_logo.svg.png", caption=f"{selected_mill} - {selected_eq}", use_container_width=True)
+
+    with details_col:
+        st.markdown(
+            f"""
+            <div class="equipment-info-card">
+                <h3 style="margin-top:0; color:#00D2FF;">⚙️ {selected_eq} ({selected_mill})</h3>
+                <p><b>Total Active Instrumentation Sensors:</b> <span style="font-size:1.1rem; color:#33FF57;">{info['total_sensors']} Channels</span></p>
+                <p><b>Sensor Configuration:</b> {info['sensor_summary']}</p>
+                <p><b>Instrument Tag Register:</b></p>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+        for tag in info["tags"]:
+            st.markdown(f"- 🏷️ `{tag}`")
+
+    st.markdown("---")
 
 # -------------------------------------------------------------------
 # 1. GENERAL PLANT OVERVIEW MATRIX
@@ -250,6 +394,10 @@ def render_live_subsystem_cards(selected_mill):
 @st.fragment(run_every="3s")
 def render_live_drilldown_charts(selected_mill, selected_eq):
     inject_silent_stream_css()
+    
+    # Render Photo & Sensor Tags Header
+    render_equipment_header_info(selected_mill, selected_eq)
+
     mill_df = shared_engine.df[shared_engine.df["mill"] == selected_mill]
     eq_data = mill_df[mill_df["equipment"] == selected_eq]
     
