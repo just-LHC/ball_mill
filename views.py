@@ -147,7 +147,7 @@ def create_smooth_line_chart(x_data, y_data, title, color="#00D2FF", height=200)
     return fig
 
 def render_equipment_header_info(selected_mill: str, selected_eq: str):
-    """Renders equipment photo placeholder and telemetry sensor breakdown prior to charts."""
+    """Renders equipment photo placeholder and telemetry sensor breakdown side-by-side prior to charts."""
     info = EQUIPMENT_METADATA_MAP.get(selected_mill, {}).get(selected_eq, {
         "total_sensors": "N/A",
         "sensor_summary": "Standard Telemetry Package",
@@ -164,14 +164,20 @@ def render_equipment_header_info(selected_mill: str, selected_eq: str):
 
     with details_col:
         st.markdown(
-            f""" """,
+            f""" {selected_eq} ({selected_mill})
+            Total Active Instrumentation Sensors: {info['total_sensors']} Channels
+
+            Sensor Configuration: {info['sensor_summary']}
+
+            Instrument Tag Register:
+
+        """,
         unsafe_allow_html=True
     )
     for tag in info["tags"]:
         st.markdown(f"- 🏷️ `{tag}`")
 
 st.markdown("---")
-
 # views.py — Part 2 of 3
 
 # -------------------------------------------------------------------
