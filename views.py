@@ -1,4 +1,4 @@
-# views.py
+# views.py — Part 1 of 3
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
@@ -121,35 +121,7 @@ def inject_silent_stream_css():
     """Injects CSS rules to lock container bounds and eliminate visual layout jitter during live SCADA updates."""
     st.markdown(
         """
-        <style>
-            /* Stabilize metric cards to prevent height flickering */
-            div[data-testid="stMetric"] {
-                background-color: #1E222A;
-                padding: 12px;
-                border-radius: 8px;
-                border: 1px solid #2E3440;
-                transition: none !important;
-            }
-            div[data-testid="stMetricValue"] {
-                font-size: 1.5rem !important;
-                font-weight: 700;
-            }
-            /* Freeze Plotly wrapper bounds so graph frames don't bounce */
-            .stPlotlyChart {
-                min-height: 200px;
-            }
-            /* Smooth transitions for seamless data ticks */
-            * {
-                transition: background-color 0.2s ease, color 0.2s ease;
-            }
-            .equipment-info-card {
-                background-color: #1A1D24;
-                padding: 15px;
-                border-radius: 8px;
-                border: 1px solid #2E3440;
-                margin-bottom: 15px;
-            }
-        </style>
+        
         """,
         unsafe_allow_html=True
     )
@@ -168,7 +140,7 @@ def create_smooth_line_chart(x_data, y_data, title, color="#00D2FF", height=200)
         height=height,
         margin=dict(l=30, r=20, t=35, b=25),
         template="plotly_dark",
-        uirevision=True,  # Keeps graph position static during live background data appends
+        uirevision=True,  # Preserves hover tooltips, scroll zoom, and pan during live ticks
         xaxis=dict(showgrid=False, zeroline=False),
         yaxis=dict(showgrid=True, gridcolor="#2E3440", zeroline=False)
     )
@@ -192,20 +164,15 @@ def render_equipment_header_info(selected_mill: str, selected_eq: str):
 
     with details_col:
         st.markdown(
-            f"""
-            <div class="equipment-info-card">
-                <h3 style="margin-top:0; color:#00D2FF;">⚙️ {selected_eq} ({selected_mill})</h3>
-                <p><b>Total Active Instrumentation Sensors:</b> <span style="font-size:1.1rem; color:#33FF57;">{info['total_sensors']} Channels</span></p>
-                <p><b>Sensor Configuration:</b> {info['sensor_summary']}</p>
-                <p><b>Instrument Tag Register:</b></p>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-        for tag in info["tags"]:
-            st.markdown(f"- 🏷️ `{tag}`")
+            f""" """,
+        unsafe_allow_html=True
+    )
+    for tag in info["tags"]:
+        st.markdown(f"- 🏷️ `{tag}`")
 
-    st.markdown("---")
+st.markdown("---")
+
+# views.py — Part 2 of 3
 
 # -------------------------------------------------------------------
 # 1. GENERAL PLANT OVERVIEW MATRIX
@@ -232,7 +199,7 @@ def render_live_overview_matrix(search_query):
     c2.metric("Active Alerts", len([a for a in all_db_alerts if "ACTIVE" in str(a.get("status", "")).upper()]), delta_color="inverse")
     c3.metric("Critical Interlocks", len([a for a in all_db_alerts if "CRITICAL" in str(a.get("severity", "")).upper() or "CRITICAL" in str(a.get("status", "")).upper()]), delta_color="inverse")
     c4.metric("ISO Warnings", len([a for a in all_db_alerts if "WARNING" in str(a.get("severity", "")).upper() or "WARNING" in str(a.get("status", "")).upper()]), delta_color="inverse")
-    
+
     st.markdown("---")
     st.subheader("Mill Operational Status Matrix")
     cols = st.columns(len(PLANT_MILLS))
@@ -290,10 +257,10 @@ def render_live_subsystem_cards(selected_mill):
     inject_silent_stream_css()
     mill_df = shared_engine.df[shared_engine.df["mill"] == selected_mill]
     available_eq = MILL_EQUIPMENT_MAP.get(selected_mill, [])
-    
+
     st.subheader(f"⚙️ {selected_mill} - Subsystem Overview")
     cols = st.columns(max(1, len(available_eq)))
-    
+
     for i, eq in enumerate(available_eq):
         eq_sub_df = mill_df[mill_df["equipment"] == eq]
         
@@ -388,19 +355,21 @@ def render_live_subsystem_cards(selected_mill):
                     st.metric("Vibration RMS", f"{latest.get('vibration_mm_s', 2.5)} mm/s")
                     st.metric("Bearing Temp", f"{latest.get('temperature_c', 55.0)} °C")
 
+# views.py — Part 3 of 3
+
 # -------------------------------------------------------------------
 # 3. EQUIPMENT DRILL-DOWN CHARTS (Smooth Background Telemetry Update)
 # -------------------------------------------------------------------
 @st.fragment(run_every="3s")
 def render_live_drilldown_charts(selected_mill, selected_eq):
     inject_silent_stream_css()
-    
+
     # Render Photo & Sensor Tags Header
     render_equipment_header_info(selected_mill, selected_eq)
 
     mill_df = shared_engine.df[shared_engine.df["mill"] == selected_mill]
     eq_data = mill_df[mill_df["equipment"] == selected_eq]
-    
+
     if not eq_data.empty:
         st.markdown(f"### 📊 Live Sensor Signals — {selected_mill} ({selected_eq})")
         
